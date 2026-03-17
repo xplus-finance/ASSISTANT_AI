@@ -1,0 +1,59 @@
+[Unit]
+Description=Personal AI Assistant
+Documentation=https://github.com/your-org/personal-ai-assistant
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ai-assistant
+Group=ai-assistant
+WorkingDirectory=/opt/ai-assistant
+ExecStart=/usr/bin/python3 -m src.main
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+
+# ── Security Hardening ──────────────────────────────────────────
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/ai-assistant/data /opt/ai-assistant/logs /opt/ai-assistant/models /tmp
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+
+# Network: allow IPv4, IPv6, and Unix sockets only
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# Misc restrictions
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+# ── Resource Limits ─────────────────────────────────────────────
+
+MemoryMax=2G
+MemoryHigh=1536M
+TasksMax=256
+LimitNOFILE=4096
+
+# ── Environment ─────────────────────────────────────────────────
+
+EnvironmentFile=/opt/ai-assistant/.env
+
+# ── Logging ─────────────────────────────────────────────────────
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ai-assistant
+
+[Install]
+WantedBy=multi-user.target

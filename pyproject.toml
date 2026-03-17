@@ -1,0 +1,77 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "personal-ai-assistant"
+version = "1.0.0"
+description = "Asistente personal de IA con integración Telegram, STT/TTS local y memoria persistente"
+requires-python = ">=3.12"
+license = {text = "MIT"}
+authors = [
+    {name = "Personal AI Assistant Contributors"},
+]
+readme = "README.md"
+
+dependencies = [
+    "python-telegram-bot[ext]",
+    "httpx",
+    "aiohttp>=3.9",
+    "faster-whisper",
+    "pydub",
+    "apsw",
+    "pydantic>=2.0",
+    "pydantic-settings",
+    "APScheduler>=3.10",
+    "watchdog",
+    "beautifulsoup4",
+    "structlog",
+    "cryptography",
+    "bcrypt",
+    "python-dotenv",
+    "gTTS",
+]
+
+[project.optional-dependencies]
+tts = [
+    "chatterbox-tts",
+]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "ruff",
+]
+
+[project.scripts]
+start = "src.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "ASYNC", # flake8-async
+]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]

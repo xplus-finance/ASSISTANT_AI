@@ -1,0 +1,60 @@
+# ============================================================================
+# Personal AI Assistant — .gitignore
+# ============================================================================
+
+# --- Secretos y configuración local ---
+.env
+.env.*
+!.env.example
+auth_info/
+
+# --- Datos persistentes (generados en runtime) ---
+data/
+logs/
+models/
+
+# --- Skills del usuario (pueden contener lógica personalizada) ---
+skills/*.py
+!skills/__init__.py
+!skills/built_in/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# --- Distribución y packaging ---
+dist/
+build/
+*.egg-info/
+*.egg
+eggs/
+*.whl
+sdist/
+
+# --- Entornos virtuales ---
+.venv/
+venv/
+ENV/
+env/
+
+# --- Herramientas de desarrollo ---
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# --- IDEs ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- Jupyter (por si se usan notebooks para pruebas) ---
+.ipynb_checkpoints/
