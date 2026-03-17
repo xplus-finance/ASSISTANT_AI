@@ -12,12 +12,9 @@ import asyncio
 import time
 import uuid
 from collections import deque
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import structlog
-
-if TYPE_CHECKING:
-    pass
 
 log = structlog.get_logger("assistant.core.gateway")
 
@@ -52,6 +49,29 @@ def _new_session_id() -> str:
 def _import_steps():
     from src.onboarding.wizard import _STEPS
     return _STEPS
+
+
+_AUDIO_KEYWORDS = [
+    "audio", "voz", "voice", "nota de voz", "voice note",
+    "dime con audio", "envíame un audio", "háblame", "cuéntame",
+    "dilo en audio", "mándame un audio", "quiero escuchar",
+    "send audio", "speak", "tell me in audio",
+]
+
+_COMPLEX_KEYWORDS = [
+    "crea", "crear", "instala", "instalar", "configura", "build",
+    "construye", "programa", "automatiza", "busca en la web",
+    "search", "find", "download", "descarga", "deploy", "setup",
+    "escribe un", "write a", "make a", "haz un", "genera",
+    "investiga", "research", "analiza", "analyze", "modifica",
+    "ejecuta", "run", "execute", "develop", "desarrolla",
+    "escritorio", "desktop", "ver mis archivos", "list",
+]
+
+
+def _compute_next_run(pattern: str) -> str | None:
+    """Compute next run time from recurrence pattern. Returns ISO datetime string or None."""
+    return None  # TODO: implement recurrence parsing
 
 
 # ---------------------------------------------------------------------------
@@ -98,13 +118,13 @@ class Gateway:
         log.info("gateway.starting")
         cfg = self._config
 
-        # 1. Database / memory
+        # -- Database / memory
         from src.memory.engine import MemoryEngine
         db_path = f"{cfg.data_dir}/assistant.db"
         encryption_key = cfg.db_encryption_key or None
         self.memory = MemoryEngine(db_path, encryption_key=encryption_key)
 
-        # 2. Memory stores
+        # -- Memory stores
         from src.memory.conversation import ConversationStore
         from src.memory.relationships import RelationshipTracker
         from src.memory.tasks import TaskManager
@@ -115,7 +135,7 @@ class Gateway:
         self.tasks = TaskManager(self.memory)
         self.learning_store = LearningStore(self.memory)
 
-        # 3. Security
+        # -- Security
         try:
             from src.core.security import SecurityGuardian
             pin = getattr(cfg, "security_pin", "") or None
@@ -126,11 +146,11 @@ class Gateway:
         except Exception:
             log.warning("gateway.security_init_failed", exc_info=True)
 
-        # 4. Approval gate
+        # -- Approval gate
         from src.utils.approval import ApprovalGate
         self.approval_gate = ApprovalGate()
 
-        # 5. Audio — lazy, no GPU at startup
+        # -- Audio (lazy init)
         try:
             from src.audio.transcriber import Transcriber
             self.transcriber = Transcriber(
@@ -147,7 +167,7 @@ class Gateway:
         except Exception:
             log.info("gateway.synthesizer_not_available", exc_info=True)
 
-        # 6. Claude bridge
+        # -- Claude bridge
         try:
             from src.core.claude_bridge import ClaudeBridge
             self.claude = ClaudeBridge(
@@ -155,12 +175,14 @@ class Gateway:
                 default_timeout=getattr(cfg, "claude_timeout", 120),
             )
             if not await self.claude.check_available():
-                log.warning("gateway.claude_cli_not_found")
+                log.warning("gateway.claude_not_available")
                 self.claude = None
+            else:
+                log.info("gateway.claude_ready_direct_api")
         except Exception:
             log.warning("gateway.claude_bridge_init_failed", exc_info=True)
 
-        # 7. Context builder
+        # -- Context builder
         try:
             from src.memory.context import ContextBuilder
             self.context_builder = ContextBuilder(
@@ -172,7 +194,7 @@ class Gateway:
         except Exception:
             log.info("gateway.context_builder_not_available", exc_info=True)
 
-        # 8. Onboarding (needs claude for smart extraction)
+        # -- Onboarding
         try:
             from src.onboarding.wizard import OnboardingWizard
             self.onboarding = OnboardingWizard(
@@ -182,7 +204,7 @@ class Gateway:
         except Exception:
             log.info("gateway.onboarding_not_available", exc_info=True)
 
-        # 9. Skills
+        # -- Skills
         try:
             from src.skills.registry import SkillRegistry
             self.skill_registry = SkillRegistry(
@@ -192,7 +214,7 @@ class Gateway:
         except Exception:
             log.info("gateway.skill_registry_not_available", exc_info=True)
 
-        # 10. Learning
+        # -- Learning
         try:
             from src.learning.knowledge_base import KnowledgeBase
             from src.learning.learner import Learner
@@ -208,7 +230,7 @@ class Gateway:
         except Exception:
             log.info("gateway.learning_not_available", exc_info=True)
 
-        # 11. Scheduler
+        # -- Scheduler
         try:
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
             self.scheduler = AsyncIOScheduler(
@@ -223,7 +245,16 @@ class Gateway:
         except Exception:
             log.info("gateway.scheduler_not_available", exc_info=True)
 
-        # 12. Telegram channel
+        # -- Hot-reload
+        self.hot_reloader = None
+        try:
+            from src.core.hot_reload import HotReloader
+            self.hot_reloader = HotReloader()
+            self.hot_reloader.start()
+        except Exception:
+            log.info("gateway.hot_reload_not_available", exc_info=True)
+
+        # -- Telegram channel
         try:
             from src.channels.telegram import TelegramChannel
             tg = TelegramChannel(token=cfg.telegram_bot_token)
@@ -260,6 +291,10 @@ class Gateway:
             except Exception:
                 pass
 
+        # Stop hot-reloader
+        if self.hot_reloader:
+            self.hot_reloader.stop()
+
         for name, channel in self.channels.items():
             try:
                 await channel.stop()
@@ -292,20 +327,20 @@ class Gateway:
         message_type = getattr(message, "message_type", "text")
         channel_name = getattr(message, "channel", "telegram")
 
-        # 1. Authorization
+        # -- Authorization
         if self.security is not None:
             if not self.security.is_authorized(int(chat_id)):
                 log.warning("gateway.unauthorized", chat_id=chat_id)
                 return
 
-        # 2. Rate limiting
+        # -- Rate limiting
         if not self._rate_limiter.is_allowed(str(chat_id)):
             log.warning("gateway.rate_limited", chat_id=chat_id)
             await self._send(channel_name, chat_id,
                              "Has enviado demasiados mensajes. Espera un momento.")
             return
 
-        # 3. Audio transcription
+        # -- Audio transcription
         if message_type == "audio" and audio_path:
             try:
                 from src.audio.processor import convert_ogg_to_wav
@@ -321,7 +356,7 @@ class Gateway:
         if not text.strip():
             return
 
-        # 4. Session management
+        # -- Session management
         now = time.time()
         if (self.last_message_time > 0
                 and (now - self.last_message_time) > SESSION_INACTIVITY_SECS):
@@ -329,7 +364,7 @@ class Gateway:
             log.info("gateway.new_session", session_id=self.current_session_id)
         self.last_message_time = now
 
-        # 5. Check if it's a pending approval response
+        # -- Pending approval response
         if self.approval_gate and self.approval_gate.get_pending():
             approved = self.approval_gate.check_response(text)
             if approved is not None:
@@ -337,12 +372,12 @@ class Gateway:
                 await self._send(channel_name, chat_id, f"Operación {status}.")
                 return
 
-        # 6. Command routing
+        # -- Command routing
         if text.startswith("!"):
             await self._handle_command(text, channel_name, chat_id)
             return
 
-        # 7. Onboarding
+        # -- Onboarding
         if self.onboarding is not None:
             try:
                 is_complete = await self.onboarding.is_onboarding_complete()
@@ -374,27 +409,39 @@ class Gateway:
             except Exception:
                 log.exception("gateway.onboarding_error")
 
-        # 8. Send typing indicator while processing
+        # -- Voice parameter changes (local, no Claude needed)
+        voice_change = self._detect_voice_change(text)
+        if voice_change and self.synthesizer:
+            self.synthesizer.set_voice_params(**voice_change)
+            confirmation = self._voice_change_confirmation(voice_change)
+            await self._send(channel_name, chat_id, confirmation)
+            self.conversations.add_message(
+                role="user", message=text,
+                session_id=self.current_session_id,
+                message_type=message_type, channel=channel_name,
+            )
+            self.conversations.add_message(
+                role="assistant", message=confirmation,
+                session_id=self.current_session_id,
+                channel=channel_name,
+            )
+            return
+
+        # -- Typing indicator
         await self._send_typing(channel_name, chat_id)
 
-        # 9. Normal conversation via Claude
+        # -- Claude conversation
         response_text = await self._ask_claude(text)
         if not response_text:
             response_text = "No pude generar una respuesta. Intenta de nuevo."
 
-        # 10. Detect if user wants audio response
-        audio_keywords = [
-            "audio", "voz", "voice", "nota de voz", "voice note",
-            "dime con audio", "envíame un audio", "háblame", "cuéntame",
-            "dilo en audio", "mándame un audio", "quiero escuchar",
-            "send audio", "speak", "tell me in audio",
-        ]
+        # -- Detect if user wants audio response
         wants_audio = (
-            message_type == "audio"  # User sent audio → respond with audio
-            or any(kw in text.lower() for kw in audio_keywords)
+            message_type == "audio"
+            or any(kw in text.lower() for kw in _AUDIO_KEYWORDS)
         )
 
-        # 11. Audio synthesis if needed
+        # -- Audio synthesis
         audio_response_path = None
         if wants_audio and self.synthesizer:
             try:
@@ -413,15 +460,13 @@ class Gateway:
             except Exception:
                 log.exception("gateway.synthesis_failed")
 
-        # 12. Reply — audio first if available, then text
+        # -- Reply
         if audio_response_path:
             await self._send_audio(channel_name, chat_id, audio_response_path)
-            # Also send text so user can read it
-            await self._send(channel_name, chat_id, response_text)
         else:
             await self._send(channel_name, chat_id, response_text)
 
-        # 12. Persist to memory
+        # -- Persist to memory
         try:
             self.conversations.add_message(
                 role="user", message=text,
@@ -436,7 +481,7 @@ class Gateway:
         except Exception:
             log.exception("gateway.persist_failed")
 
-        # 13. Fact extraction — every 5 messages to keep memory fresh
+        # -- Periodic fact extraction (every 5 messages)
         self._message_counter += 1
         if self._message_counter % 5 == 0 and self.learner:
             asyncio.create_task(self._extract_facts_bg())
@@ -463,16 +508,7 @@ class Gateway:
                 log.exception("gateway.context_build_failed")
 
         # Detect if this is a complex task that needs more autonomy
-        complex_keywords = [
-            "crea", "crear", "instala", "instalar", "configura", "build",
-            "construye", "programa", "automatiza", "busca en la web",
-            "search", "find", "download", "descarga", "deploy", "setup",
-            "escribe un", "write a", "make a", "haz un", "genera",
-            "investiga", "research", "analiza", "analyze", "modifica",
-            "ejecuta", "run", "execute", "develop", "desarrolla",
-            "escritorio", "desktop", "ver mis archivos", "list",
-        ]
-        is_complex = any(kw in user_text.lower() for kw in complex_keywords)
+        is_complex = any(kw in user_text.lower() for kw in _COMPLEX_KEYWORDS)
 
         try:
             return await self.claude.ask(
@@ -482,7 +518,7 @@ class Gateway:
             )
         except Exception:
             log.exception("gateway.claude_failed")
-            return "Perdona, me tomó más tiempo del esperado. ¿Puedes repetir tu mensaje?"
+            return "Perdona, tuve un problema procesando tu solicitud. Dame un momento e intenta de nuevo."
 
     def _build_system_prompt(self, ctx: Any) -> str:
         """Convert a ConversationContext into a clean system prompt string."""
@@ -576,28 +612,130 @@ class Gateway:
             "- Si el usuario dice 'recuérdame mañana', 'hazlo el lunes', "
             "'cada semana a las 9am' — programa la tarea correctamente.\n\n"
 
+            "AUTO-EVOLUCIÓN (MUY IMPORTANTE):\n"
+            f"- Tu código fuente está en: {self.claude.install_dir}\n"
+            "- SIEMPRE modifica archivos en ESE directorio, no en otro.\n"
+            "- Si encuentras un bug o necesitas una funcionalidad nueva, "
+            "puedes modificar tu propio código fuente directamente.\n"
+            "- Los cambios se aplican AUTOMÁTICAMENTE sin reiniciar "
+            "(hot-reload está activo en src/ y skills/).\n"
+            "- Si el usuario pide algo que no puedes hacer, CREA el código: "
+            "una skill nueva en skills/, un módulo en src/, o un MCP en mcps/.\n"
+            "- Si arreglas un bug, informa al usuario: "
+            "'Encontré el problema y ya lo arreglé. Ya está funcionando.'\n"
+            "- NUNCA digas 'necesitas reinstalar' ni 'reinicia el programa'. "
+            "Los cambios se aplican en caliente.\n\n"
+
             "PROACTIVIDAD:\n"
             "- Anticipa lo que el usuario pueda necesitar.\n"
             "- Si detectas un patrón (pide lo mismo repetidamente), "
             "sugiere automatizarlo.\n"
             "- Si ves un error en algo que el usuario hace, avísale.\n\n"
 
-            "AUDIO Y MULTIMEDIA — MUY IMPORTANTE:\n"
-            "- El usuario se comunica contigo a través de Telegram, "
-            "posiblemente desde fuera de casa.\n"
-            "- NUNCA abras ventanas, reproduzcas audio, ni uses aplicaciones "
-            "de escritorio del sistema. El usuario NO está frente a la computadora.\n"
-            "- Si el usuario pide un audio, chiste en audio, canción, etc: "
-            "responde CON TEXTO. El sistema automáticamente convertirá tu "
-            "respuesta a audio y se la enviará como nota de voz en Telegram.\n"
-            "- NUNCA uses 'play', 'aplay', 'mpv', 'vlc', 'xdg-open' ni "
-            "ningún reproductor. Solo devuelve el texto.\n"
-            "- Si el usuario pide que le envíes algo como archivo, "
-            "usa las herramientas para crear el archivo y el sistema "
-            "lo enviará por Telegram automáticamente."
+            "AUDIO Y MULTIMEDIA:\n"
+            "- Si el usuario pide un audio o respuesta con voz: "
+            "responde CON TEXTO. El sistema convertira tu respuesta a audio automaticamente.\n"
+            "- NUNCA uses reproductores de audio (play, aplay, mpv, vlc).\n"
+            "- CAMBIOS DE VOZ: Si el usuario pide cambiar la voz, simplemente "
+            "responde confirmando. El sistema lo maneja automaticamente.\n\n"
+
+            "EJECUCION VISUAL EN ESCRITORIO:\n"
+            "- Si el usuario EXPLICITAMENTE pide que abras algo, escribas visualmente, "
+            "o hagas algo en su escritorio (abrir archivo, escribir en un documento, "
+            "abrir una ventana, etc.): USA las herramientas de escritorio.\n"
+            "- Puedes abrir archivos con xdg-open (Linux) o start (Windows).\n"
+            "- Puedes escribir visualmente con xdotool type (Linux) o pyautogui (Windows).\n"
+            "- Si el usuario dice 'abre', 'escribe visualmente', 'hazlo en mi escritorio', "
+            "'quiero ver como lo haces': usa control de escritorio.\n"
+            "- Si NO pide ejecucion visual, simplemente ejecuta el comando normalmente."
         )
 
         return "\n\n".join(parts)
+
+    def _detect_voice_change(self, text: str) -> dict | None:
+        """Detect if user is requesting a voice parameter change.
+        Returns dict of params to pass to synthesizer.set_voice_params(), or None.
+
+        Uses strict intent detection to avoid triggering on normal conversation.
+        Requires BOTH a voice-context word AND an action/modifier word.
+        """
+        import re
+        lower = text.lower().strip()
+
+        # Short messages (under 60 chars) with clear voice intent
+        # Long messages are likely conversation, not voice commands
+        if len(lower) > 80:
+            return None
+
+        # Must contain a voice-context word (the subject being changed)
+        voice_context = ["voz", "voice", "tono", "habla", "hablar", "habla más",
+                         "hablar más", "la voz", "tu voz", "mi voz"]
+        has_voice_context = any(kw in lower for kw in voice_context)
+
+        # Must contain a change intent (action/modifier)
+        change_intents = ["cambia", "cambiar", "pon", "poner", "quiero", "hazla",
+                          "hazlo", "más grave", "mas grave", "más agud", "mas agud",
+                          "más rápid", "mas rapid", "más lent", "mas lent",
+                          "masculin", "femenin"]
+        has_change_intent = any(kw in lower for kw in change_intents)
+
+        if not (has_voice_context and has_change_intent):
+            return None
+
+        params: dict = {}
+
+        # Pitch detection (check specific patterns before general ones)
+        if any(w in lower for w in ["muy grave", "super grave", "very deep"]):
+            params["pitch"] = "very_low"
+        elif any(w in lower for w in ["más grave", "mas grave"]):
+            current = self.synthesizer._pitch if self.synthesizer else "normal"
+            params["pitch"] = "very_low" if current == "low" else "low"
+        elif any(w in lower for w in ["grave", "masculin"]):
+            params["pitch"] = "low"
+        elif any(w in lower for w in ["agud", "femenin"]):
+            params["pitch"] = "high"
+        elif "normal" in lower:
+            params["pitch"] = "normal"
+
+        # Speed detection (relative to current speed)
+        current_speed = self.synthesizer._speed if self.synthesizer else 1.0
+
+        speed_match = re.search(r"(\d+)\s*%?\s*(más\s*)?(rápid|rapid|fast)", lower)
+        if speed_match:
+            pct = int(speed_match.group(1))
+            params["speed"] = current_speed + (pct / 100.0)
+        elif any(w in lower for w in ["más rápid", "mas rapid"]):
+            params["speed"] = current_speed + 0.15
+        elif any(w in lower for w in ["más lent", "mas lent"]):
+            params["speed"] = max(0.5, current_speed - 0.15)
+
+        return params if params else None
+
+    def _voice_change_confirmation(self, params: dict) -> str:
+        """Generate a human-friendly confirmation of voice changes."""
+        parts = []
+        if "pitch" in params:
+            # Read actual value from synthesizer after applying
+            actual_pitch = self.synthesizer._pitch if self.synthesizer else params["pitch"]
+            pitch_names = {
+                "very_low": "muy grave (masculina)",
+                "low": "grave (masculina)",
+                "normal": "normal",
+                "high": "aguda (femenina)",
+                "very_high": "muy aguda",
+            }
+            parts.append(f"voz {pitch_names.get(actual_pitch, actual_pitch)}")
+        if "speed" in params:
+            # Read actual value from synthesizer after applying
+            actual_speed = self.synthesizer._speed if self.synthesizer else params["speed"]
+            pct = int((actual_speed - 1.0) * 100)
+            if pct > 0:
+                parts.append(f"{pct}% más rápido")
+            elif pct < 0:
+                parts.append(f"{abs(pct)}% más lento")
+            else:
+                parts.append("velocidad normal")
+        return "Listo, cambié la configuración: " + ", ".join(parts) + ". Pruébame pidiendo un audio."
 
     async def _handle_command(self, text: str, channel: str, chat_id: Any) -> None:
         """Route !commands to skills."""
@@ -676,11 +814,10 @@ class Gateway:
 
             # Notify user that task is being executed
             notification = f"⏰ Ejecutando tarea programada: {title}"
+            chat_id = str(self._config.authorized_chat_id)
             for ch in self.channels.values():
                 try:
-                    from src.main import Settings
-                    settings = Settings()
-                    await ch.send_text(str(settings.authorized_chat_id), notification)
+                    await ch.send_text(chat_id, notification)
                 except Exception:
                     pass
 
@@ -699,9 +836,8 @@ class Gateway:
             # Send result to user
             for ch in self.channels.values():
                 try:
-                    settings = Settings()
-                    msg = f"✅ Tarea completada: {title}\n\n{result_text[:3000]}"
-                    await ch.send_text(str(settings.authorized_chat_id), msg)
+                    msg = f"Tarea completada: {title}\n\n{result_text[:3000]}"
+                    await ch.send_text(chat_id, msg)
                 except Exception:
                     pass
 

@@ -8,6 +8,7 @@ Falls back to plain subprocess with timeout if bwrap is not installed.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import time
@@ -15,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src.utils.logger import get_app_logger, get_security_logger
+from src.utils.platform import IS_WINDOWS, SHELL_CMD, TEMP_DIR, DEFAULT_PATH_ENV, DEFAULT_HOME_ENV
 
 
 @dataclass(frozen=True)
@@ -43,20 +45,9 @@ class ExecutionResult:
 
 
 class SandboxedExecutor:
-    """
-    Execute shell commands inside a bubblewrap sandbox.
-
-    The sandbox provides:
-    - Full namespace isolation (--unshare-all)
-    - Read-only binds for system directories
-    - A single writable workspace directory
-    - Optional network access (disabled by default)
-    - Process dies with parent (--die-with-parent)
-    - New session to prevent terminal escape (--new-session)
-
-    If bubblewrap is not installed, falls back to subprocess.run with
-    a timeout, logging a warning about reduced security.
-    """
+    """Execute shell commands inside a bubblewrap (bwrap) sandbox with
+    namespace isolation and controlled filesystem/network access.
+    Falls back to subprocess with timeout if bwrap is unavailable."""
 
     # Maximum output size to capture (prevent OOM on pathological commands)
     MAX_OUTPUT_BYTES = 1024 * 1024  # 1 MB
@@ -64,9 +55,9 @@ class SandboxedExecutor:
     def __init__(self) -> None:
         self._log = get_app_logger()
         self._sec_log = get_security_logger()
-        self._bwrap_path = shutil.which("bwrap")
+        self._bwrap_path = None if IS_WINDOWS else shutil.which("bwrap")
 
-        if self._bwrap_path is None:
+        if self._bwrap_path is None and not IS_WINDOWS:
             self._log.warning(
                 "bwrap_not_found",
                 message=(
@@ -74,6 +65,11 @@ class SandboxedExecutor:
                     "Commands will run WITHOUT sandboxing. "
                     "Install with: sudo apt install bubblewrap"
                 ),
+            )
+        elif IS_WINDOWS:
+            self._log.info(
+                "sandbox_windows",
+                message="Running on Windows — bubblewrap not available, using subprocess fallback.",
             )
 
     @property
@@ -84,7 +80,7 @@ class SandboxedExecutor:
     def execute(
         self,
         command: str,
-        workspace: str = "/tmp",
+        workspace: str = TEMP_DIR,
         timeout: int = 30,
         allow_network: bool = False,
     ) -> ExecutionResult:
@@ -149,11 +145,6 @@ class SandboxedExecutor:
         if Path("/etc/alternatives").exists():
             bwrap_args.extend(["--ro-bind", "/etc/alternatives", "/etc/alternatives"])
 
-        # /usr/share may be a separate mount on some systems
-        if Path("/usr/share").exists() and not Path("/usr/share").is_symlink():
-            # Already covered by /usr bind, but explicit doesn't hurt
-            pass
-
         # Network access
         if allow_network:
             bwrap_args.append("--share-net")
@@ -184,10 +175,14 @@ class SandboxedExecutor:
         self._sec_log.warning(
             "unsandboxed_execution",
             command=command[:200],
-            message="Running without sandbox — bwrap not available",
+            message="Running without sandbox \u2014 bwrap not available",
         )
 
-        args = ["/bin/sh", "-c", f"cd {workspace} && {command}"]
+        if IS_WINDOWS:
+            # On Windows use cmd /c with cd
+            args = [*SHELL_CMD, f"cd /d {workspace} && {command}"]
+        else:
+            args = [*SHELL_CMD, f"cd {workspace} && {command}"]
         return self._run_process(args, timeout, sandboxed=False)
 
     def _run_process(
@@ -216,7 +211,7 @@ class SandboxedExecutor:
                 capture_output=True,
                 timeout=timeout,
                 # Don't inherit environment inside sandbox
-                env={"PATH": "/usr/bin:/bin", "HOME": "/workspace", "LANG": "C.UTF-8"},
+                env={"PATH": DEFAULT_PATH_ENV, "HOME": DEFAULT_HOME_ENV, "LANG": "C.UTF-8"},
             )
             stdout = proc.stdout.decode("utf-8", errors="replace")[:self.MAX_OUTPUT_BYTES]
             stderr = proc.stderr.decode("utf-8", errors="replace")[:self.MAX_OUTPUT_BYTES]

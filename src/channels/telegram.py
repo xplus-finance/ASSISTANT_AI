@@ -114,6 +114,17 @@ class TelegramChannel(Channel):
                 voice=audio_file,
             )
 
+    async def send_photo(self, chat_id: str, photo_path: str, caption: str = "") -> None:
+        """Send a photo to a chat."""
+        if self._app is None:
+            raise RuntimeError("Telegram bot is not running.")
+        with open(photo_path, "rb") as photo:
+            await self._app.bot.send_photo(
+                chat_id=int(chat_id),
+                photo=photo,
+                caption=caption or None,
+            )
+
     async def send_document(
         self, chat_id: str, path: str, caption: str = ""
     ) -> None:

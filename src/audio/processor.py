@@ -13,7 +13,12 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from pydub import AudioSegment
+try:
+    from pydub import AudioSegment
+    _PYDUB_OK = True
+except ImportError:
+    AudioSegment = None  # type: ignore[assignment]
+    _PYDUB_OK = False
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +62,7 @@ def convert_ogg_to_wav(
     if not ensure_ffmpeg():
         raise RuntimeError(
             "ffmpeg is not installed. Install it with: "
-            "sudo apt install ffmpeg"
+            "winget install ffmpeg (Windows) or sudo apt install ffmpeg (Linux)"
         )
 
     if output_path is None:
@@ -66,6 +71,12 @@ def convert_ogg_to_wav(
     else:
         output_path = os.path.abspath(output_path)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    if not _PYDUB_OK:
+        raise RuntimeError(
+            "pydub is not available (Python 3.13+: install pyaudioop). "
+            "Run: pip install pyaudioop"
+        )
 
     try:
         audio = AudioSegment.from_file(input_path, format="ogg")
@@ -116,7 +127,7 @@ def convert_wav_to_ogg(
     if not ensure_ffmpeg():
         raise RuntimeError(
             "ffmpeg is not installed. Install it with: "
-            "sudo apt install ffmpeg"
+            "winget install ffmpeg (Windows) or sudo apt install ffmpeg (Linux)"
         )
 
     if output_path is None:
@@ -125,6 +136,12 @@ def convert_wav_to_ogg(
     else:
         output_path = os.path.abspath(output_path)
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    if not _PYDUB_OK:
+        raise RuntimeError(
+            "pydub is not available (Python 3.13+: install pyaudioop). "
+            "Run: pip install pyaudioop"
+        )
 
     try:
         # Auto-detect input format (works with WAV, MP3, etc.)
@@ -186,5 +203,7 @@ def get_audio_duration(path: str) -> float:
             pass
 
     # Fallback to pydub
+    if not _PYDUB_OK:
+        raise RuntimeError("pydub not available and ffprobe failed. Install pyaudioop.")
     audio = AudioSegment.from_file(path)
     return len(audio) / 1000.0

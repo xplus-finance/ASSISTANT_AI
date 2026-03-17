@@ -222,7 +222,8 @@ class OnboardingWizard:
 
             # Wait for the user's answer
             response = await receive_fn()
-            response = response.strip()
+            # Normalize: strip BOM, CRLF → LF, then strip whitespace
+            response = response.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n").strip()
 
             if not response:
                 await send_fn("No recibi tu respuesta. Intenta de nuevo.")
@@ -308,31 +309,130 @@ class OnboardingWizard:
     # ------------------------------------------------------------------
 
     async def _extract_clean_value(self, key: str, raw_response: str) -> str:
-        """Use Claude to extract the clean value from a natural language response."""
+        """Use Claude to extract the clean value from a natural language response.
+        Falls back to local regex extraction if Claude is unavailable."""
+        # Normalize input: strip BOM, normalize CRLF → LF, take first non-empty line
+        raw_response = raw_response.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
+        raw_response = raw_response.strip()
+
+        # For simple name fields, try local extraction first — it's fast and reliable
+        # for common patterns; Claude is only needed for unusual phrasings
+        if key in ("assistant_name", "user_name"):
+            pre_clean = self._local_extract(key, raw_response)
+            # If local extract produced something shorter (i.e., it actually stripped preamble),
+            # use it directly without calling Claude
+            if pre_clean != raw_response and len(pre_clean.split()) <= 4:
+                log.info("onboarding.extracted_local", key=key, raw=raw_response, clean=pre_clean)
+                return pre_clean
+
         extraction_prompt = _EXTRACTION_PROMPTS.get(key)
 
-        # If no extraction prompt or no Claude bridge, return as-is
-        if not extraction_prompt or not self._claude:
-            return raw_response.strip()
+        # Try Claude extraction
+        if extraction_prompt and self._claude:
+            prompt = extraction_prompt.format(response=raw_response)
+            try:
+                raw_clean = await self._claude.ask(
+                    prompt=prompt,
+                    system_prompt="You are a text extraction tool. Return ONLY the extracted value. No quotes, no explanation, no extra text. Single line only.",
+                    timeout=30,
+                )
+                # Normalize Claude's output: BOM, CRLF, take first non-empty line
+                raw_clean = raw_clean.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
+                lines = [ln.strip() for ln in raw_clean.split("\n") if ln.strip()]
+                clean = lines[0] if lines else ""
+                clean = clean.strip().strip('"').strip("'").strip()
 
-        prompt = extraction_prompt.format(response=raw_response)
+                # Final safety pass: run local extract on Claude's output too
+                # in case Claude echoed the full phrase back
+                if clean and key in ("assistant_name", "user_name"):
+                    clean = self._local_extract(key, clean)
 
-        try:
-            import asyncio
-            clean = await self._claude.ask(
-                prompt=prompt,
-                system_prompt="You are a text extraction tool. Return ONLY the extracted value. No quotes, no explanation, no extra text.",
-                timeout=30,
-            )
-            clean = clean.strip().strip('"').strip("'")
-            if clean:
-                log.info("onboarding.extracted", key=key, raw=raw_response, clean=clean)
-                return clean
-        except Exception:
-            log.warning("onboarding.extraction_failed", key=key, exc_info=True)
+                if clean:
+                    log.info("onboarding.extracted_claude", key=key, raw=raw_response, clean=clean)
+                    return clean
+            except Exception:
+                log.warning("onboarding.extraction_failed", key=key, exc_info=True)
 
-        # Fallback: return raw response
-        return raw_response.strip()
+        # Local fallback extraction (no Claude needed)
+        return self._local_extract(key, raw_response)
+
+    @staticmethod
+    def _local_extract(key: str, raw: str) -> str:
+        """Simple local extraction without AI — strips common preamble phrases."""
+        import re
+
+        text = raw.strip()
+
+        if key == "assistant_name":
+            # Remove phrases like "te vas a llamar", "quiero que te llames", "llamate", "ponle"
+            text = re.sub(
+                r"(?i)^(ok[,.]?\s*)?(perfecto[,.]?\s*)?(tu nombre es|tu nombre será|tu nombre va a ser|"
+                r"te vas a llamar|quiero que te llames|que te llames|me gustar[ií]a que te llames|"
+                r"podrías llamarte|llamate|llámame|ll[aá]mate|ponle|quiero llamarte|"
+                r"voy a llamarte|te voy a llamar|a partir de ahora te llamas|"
+                r"i want you to be called|call yourself|your name (is|will be|shall be)|"
+                r"from now on (you are|you're|call yourself)|you will be called)\s*",
+                "", text,
+            ).strip()
+            # Also handle trailing punctuation / filler after extraction
+            text = re.sub(r"[.,!?]+$", "", text).strip()
+
+        elif key == "user_name":
+            # Remove "me llamo", "a mi me llamas", "mi nombre es", "soy", "llamame", "dime"
+            text = re.sub(
+                r"(?i)^(a mi me llamas|me llamas|me puedes llamar|me llamo|mi nombre es|"
+                r"mi apodo es|soy|llamame|llámame|ll[aá]mame|dime|puedes llamarme|"
+                r"my name is|you can call me|call me|i am|i'm|just call me)\s*",
+                "", text,
+            ).strip()
+            text = re.sub(r"[.,!?]+$", "", text).strip()
+
+        elif key == "timezone":
+            # Try to map common locations to timezone identifiers
+            tz_map = {
+                r"florida|miami|cape coral|orlando|tampa|jacksonville": "America/New_York",
+                r"new york|nyc|boston|philadelphia|washington|atlanta|carolina": "America/New_York",
+                r"chicago|illinois|houston|texas|dallas|austin|san antonio": "America/Chicago",
+                r"denver|colorado|phoenix|arizona|utah|montana": "America/Denver",
+                r"los angeles|california|san francisco|seattle|portland|oregon|nevada|las vegas": "America/Los_Angeles",
+                r"mexico|cdmx|ciudad de mexico|guadalajara|monterrey": "America/Mexico_City",
+                r"colombia|bogota|bogotá|medell[ií]n": "America/Bogota",
+                r"argentina|buenos aires": "America/Argentina/Buenos_Aires",
+                r"chile|santiago": "America/Santiago",
+                r"spain|españa|madrid|barcelona": "Europe/Madrid",
+                r"london|uk|england|united kingdom": "Europe/London",
+                r"paris|france|francia|germany|alemania|berlin": "Europe/Paris",
+                r"brazil|brasil|sao paulo|são paulo|rio": "America/Sao_Paulo",
+                r"peru|lima": "America/Lima",
+                r"venezuela|caracas": "America/Caracas",
+                r"puerto rico": "America/Puerto_Rico",
+                r"hawaii": "Pacific/Honolulu",
+                r"alaska": "America/Anchorage",
+            }
+            lower = text.lower()
+            for pattern, tz in tz_map.items():
+                if re.search(pattern, lower):
+                    text = tz
+                    break
+            # If it already looks like a timezone ID, keep it
+            if "/" in text and text[0].isupper():
+                pass  # Already a valid tz
+
+        elif key == "work_area":
+            # Remove preamble like "soy", "me dedico a", "trabajo en"
+            text = re.sub(
+                r"(?i)^(soy|me dedico a|trabajo en|trabajo como|i am a|i work as|i work in|my job is)\s*",
+                "", text,
+            ).strip()
+
+        elif key == "comm_preferences":
+            # Remove preamble like "quiero que", "prefiero"
+            text = re.sub(
+                r"(?i)^(quiero que sea|quiero que|prefiero|i prefer|i want)\s*",
+                "", text,
+            ).strip()
+
+        return text if text else raw.strip()
 
     # ------------------------------------------------------------------
     # Persistence

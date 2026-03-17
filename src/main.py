@@ -16,8 +16,11 @@ import asyncio
 import signal
 import sys
 import traceback
+from pathlib import Path
 
 from pydantic_settings import BaseSettings
+
+from src.utils.platform import IS_WINDOWS
 
 
 # ---------------------------------------------------------------------------
@@ -44,7 +47,7 @@ class Settings(BaseSettings):
     claude_timeout: int = 120
 
     # -- Paths --------------------------------------------------------------
-    projects_base_dir: str = "/home"
+    projects_base_dir: str = str(Path.home()) if IS_WINDOWS else "/home"
     data_dir: str = "data"
     skills_dir: str = "skills"
     logs_dir: str = "logs"
@@ -126,8 +129,6 @@ async def main() -> None:
     )
 
     # 3. Ensure critical directories exist
-    from pathlib import Path
-
     for directory in (settings.data_dir, settings.logs_dir, settings.skills_dir):
         Path(directory).mkdir(parents=True, exist_ok=True)
 
@@ -137,12 +138,21 @@ async def main() -> None:
     gateway = Gateway(settings)
 
     # 5. Register OS signal handlers for graceful shutdown
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(
-            sig,
-            lambda s=sig: asyncio.create_task(_handle_signal(s, gateway, log)),
-        )
+    if IS_WINDOWS:
+        # Windows asyncio does not support add_signal_handler;
+        # use the synchronous signal module instead.
+        def _win_handler(signum, frame):
+            asyncio.ensure_future(_handle_signal(signal.Signals(signum), gateway, log))
+
+        signal.signal(signal.SIGINT, _win_handler)
+        signal.signal(signal.SIGTERM, _win_handler)
+    else:
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            loop.add_signal_handler(
+                sig,
+                lambda s=sig: asyncio.create_task(_handle_signal(s, gateway, log)),
+            )
 
     # 6. Run
     try:

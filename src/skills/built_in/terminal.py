@@ -15,6 +15,7 @@ import structlog
 
 from src.skills.base_skill import BaseSkill, SkillResult
 from src.utils.approval import ApprovalGate
+from src.utils.platform import IS_WINDOWS
 
 log = structlog.get_logger("assistant.skills.terminal")
 
@@ -22,7 +23,7 @@ log = structlog.get_logger("assistant.skills.terminal")
 _MAX_OUTPUT = 4000
 
 # Commands that are outright blocked regardless of approval
-_BLOCKED_PATTERNS: frozenset[str] = frozenset({
+_BLOCKED_PATTERNS_LINUX: frozenset[str] = frozenset({
     "rm -rf /",
     "rm -rf /*",
     "mkfs",
@@ -32,8 +33,19 @@ _BLOCKED_PATTERNS: frozenset[str] = frozenset({
     "chmod -R 777 /",
 })
 
+_BLOCKED_PATTERNS_WINDOWS: frozenset[str] = frozenset({
+    "del /f /s /q c:\\",
+    "rd /s /q c:\\",
+    "format c:",
+    "diskpart",
+    "bcdedit",
+    "remove-item -recurse -force c:\\",
+})
+
+_BLOCKED_PATTERNS: frozenset[str] = _BLOCKED_PATTERNS_WINDOWS if IS_WINDOWS else _BLOCKED_PATTERNS_LINUX
+
 # Commands that require approval before execution
-_DANGEROUS_PREFIXES: tuple[str, ...] = (
+_DANGEROUS_PREFIXES_LINUX: tuple[str, ...] = (
     "rm ",
     "sudo ",
     "apt ",
@@ -51,6 +63,29 @@ _DANGEROUS_PREFIXES: tuple[str, ...] = (
     "curl ",
     "wget ",
 )
+
+_DANGEROUS_PREFIXES_WINDOWS: tuple[str, ...] = (
+    "del ",
+    "rd ",
+    "rmdir ",
+    "pip install",
+    "npm install",
+    "docker ",
+    "net stop",
+    "net user",
+    "sc delete",
+    "sc stop",
+    "taskkill ",
+    "move c:\\",
+    "copy c:\\",
+    "reg delete",
+    "reg add",
+    "powershell ",
+    "curl ",
+    "wget ",
+)
+
+_DANGEROUS_PREFIXES: tuple[str, ...] = _DANGEROUS_PREFIXES_WINDOWS if IS_WINDOWS else _DANGEROUS_PREFIXES_LINUX
 
 
 class TerminalSkill(BaseSkill):
@@ -100,7 +135,11 @@ class TerminalSkill(BaseSkill):
         guardian = context.get("security_guardian") or context.get("guardian")
         if guardian is not None:
             try:
-                allowed = guardian.validate_command(command)
+                result = guardian.validate_command(command)
+                if isinstance(result, tuple):
+                    allowed, reason = result
+                else:
+                    allowed = result
                 if not allowed:
                     return SkillResult(
                         success=False,

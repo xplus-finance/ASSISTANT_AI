@@ -1,275 +1,279 @@
 """
-Claude Code CLI integration via asyncio subprocess.
+Persistent Claude Code CLI session.
 
-Uses ``claude -p`` (print mode) with the user's Claude Pro/Max subscription.
-All communication happens through the CLI invoked as a child process.
+Runs Claude Code as a SEPARATE persistent instance using stream-json
+bidirectional protocol. Does NOT interfere with the user's own
+Claude Code CLI session (multiple instances can run simultaneously).
 
-CRITICAL: Uses --permission-mode bypassPermissions so Claude can act
-autonomously without blocking on terminal prompts. Security is handled
-by our own 7-layer security system, not by Claude's permission prompts.
+Architecture:
+- Spawns `claude` with --input-format stream-json --output-format stream-json
+- Process stays alive — maintains context across messages
+- Communicates via stdin/stdout JSON
+- Falls back to `claude -p` one-shot if persistent mode fails
 """
-
-from __future__ import annotations
 
 import asyncio
 import json
-import shlex
-from collections.abc import AsyncIterator
+import pathlib
+import shutil
+import sys
+import time
 from typing import Any
-
 import structlog
 
 log = structlog.get_logger("assistant.claude_bridge")
 
+_IS_WINDOWS = sys.platform == "win32"
+
+
+def _resolve_claude_path(cli_path: str) -> str:
+    """Resolve the claude CLI executable path, handling Windows quirks.
+
+    On Windows, Claude Code installs as 'claude.cmd' (a batch wrapper).
+    shutil.which() finds it correctly; we just need to make sure we use
+    the full path so asyncio.create_subprocess_exec works without a shell.
+    """
+    if cli_path != "claude":
+        return cli_path  # Explicit path — trust caller
+
+    resolved = shutil.which(cli_path)
+    if resolved:
+        return resolved
+
+    # Windows fallback: try common install locations
+    if _IS_WINDOWS:
+        import os
+        candidates = [
+            pathlib.Path(os.environ.get("APPDATA", "")) / "npm" / "claude.cmd",
+            pathlib.Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "claude" / "claude.cmd",
+        ]
+        for c in candidates:
+            if c.exists():
+                return str(c)
+
+    return cli_path  # Return as-is and let the OS resolve it
+
 
 class ClaudeBridgeError(Exception):
-    """Raised when the Claude CLI returns an error or times out."""
+    pass
 
 
 class ClaudeBridge:
-    """
-    Async bridge to the ``claude`` CLI.
-
-    All methods use ``asyncio.create_subprocess_exec`` with
-    ``stdin=DEVNULL`` to prevent hanging on interactive input.
-    Uses ``--permission-mode bypassPermissions`` so Claude acts
-    autonomously (our security layer handles permissions instead).
-    """
-
-    def __init__(
-        self,
-        cli_path: str = "claude",
-        default_timeout: int = 60,
-        max_turns: int = 5,
-    ) -> None:
-        self._cli = cli_path
+    def __init__(self, cli_path="claude", default_timeout=60):
+        self._cli = _resolve_claude_path(cli_path)
         self._default_timeout = default_timeout
-        self._max_turns = max(max_turns, 10)  # Minimum 10 turns for basic tasks
-        self._max_turns_complex = 30  # For tasks that need more autonomy
+        self._install_dir = str(pathlib.Path(__file__).resolve().parent.parent.parent)
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+        # Persistent session
+        self._process = None
+        self._session_active = False
+        self._lock = asyncio.Lock()  # Serialize requests to the session
 
-    async def ask(
-        self,
-        prompt: str,
-        system_prompt: str = "",
-        timeout: int | None = None,
-        complex_task: bool = False,
-    ) -> str:
-        """Send a one-shot prompt and return the response text.
+    @staticmethod
+    async def _create_subprocess(cmd: list[str], **kwargs):
+        """Create a subprocess, handling Windows .cmd wrapper quirks.
 
-        Args:
-            complex_task: If True, allows more turns and longer timeout
-                         for tasks that need autonomy (creating tools, etc.)
+        On Windows, batch files (.cmd) cannot be launched directly with
+        create_subprocess_exec — they require cmd.exe to interpret them.
+        We detect this and prepend 'cmd /c' automatically.
         """
-        if complex_task:
-            timeout = timeout or 300  # 5 min for complex tasks
-            max_turns = self._max_turns_complex
-        else:
-            timeout = timeout or self._default_timeout
-            max_turns = self._max_turns
+        if _IS_WINDOWS and cmd and str(cmd[0]).lower().endswith(".cmd"):
+            cmd = ["cmd", "/c"] + cmd
+        return await asyncio.create_subprocess_exec(*cmd, **kwargs)
 
-        cmd = self._build_cmd(
-            prompt, system_prompt, output_format="text",
-            extra_args=["--max-turns", str(max_turns)] if complex_task else None,
+    async def start_session(self):
+        """Start the persistent Claude Code session."""
+        if self._process and self._process.returncode is None:
+            return  # Already running
+
+        cmd = [
+            self._cli,
+            '-p', '',  # Print mode with empty initial prompt
+            '--input-format', 'stream-json',
+            '--output-format', 'stream-json',
+            '--permission-mode', 'bypassPermissions',
+            '--add-dir', self._install_dir,
+            '--verbose',
+        ]
+
+        self._process = await self._create_subprocess(
+            cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
-        stdout = await self._run(cmd, timeout)
-        return stdout.strip()
+        self._session_active = True
+        log.info("claude_bridge.session_started", pid=self._process.pid)
 
-    async def ask_json(
-        self,
-        prompt: str,
-        system_prompt: str = "",
-        timeout: int | None = None,
-    ) -> str:
-        """Send a prompt and return parsed JSON response."""
+    async def stop_session(self):
+        """Stop the persistent session."""
+        if self._process and self._process.returncode is None:
+            self._process.stdin.close()
+            try:
+                await asyncio.wait_for(self._process.wait(), timeout=10)
+            except asyncio.TimeoutError:
+                self._process.kill()
+                await self._process.wait()
+        self._session_active = False
+        self._process = None
+        log.info("claude_bridge.session_stopped")
+
+    async def ask(self, prompt, system_prompt="", timeout=None, complex_task=False):
+        """Send a message to the persistent session and get response."""
         timeout = timeout or self._default_timeout
-        cmd = self._build_cmd(prompt, system_prompt, output_format="json")
-        stdout = await self._run(cmd, timeout)
-        return self._extract_result(stdout)
+        if complex_task:
+            timeout = max(timeout, 300)
 
-    async def ask_streaming(
-        self,
-        prompt: str,
-        system_prompt: str = "",
-    ) -> AsyncIterator[dict[str, Any]]:
-        """Send a prompt and yield JSON chunks as they arrive."""
-        cmd = self._build_cmd(prompt, system_prompt, output_format="stream-json")
+        async with self._lock:  # One request at a time
+            try:
+                # Try persistent session first
+                if self._session_active and self._process and self._process.returncode is None:
+                    return await self._send_to_session(prompt, system_prompt, timeout)
+            except asyncio.CancelledError:
+                raise  # No swallowear — tarea cancelada externamente
+            except Exception:
+                log.warning("claude_bridge.session_failed_using_oneshot", exc_info=True)
 
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
+            # Fallback to one-shot
+            return await self._oneshot(prompt, system_prompt, timeout)
+
+    async def _send_to_session(self, prompt, system_prompt, timeout):
+        """Send message to persistent session via stdin JSON."""
+        # Build the message according to stream-json input format
+        message = {
+            "type": "user_message",
+            "content": prompt,
+        }
+        if system_prompt:
+            message["system"] = system_prompt
+
+        # Write to stdin
+        line = json.dumps(message) + "\n"
+        self._process.stdin.write(line.encode())
+        await self._process.stdin.drain()
+
+        # Read response chunks until we get a result
+        response_text = ""
+        deadline = time.time() + timeout
+
+        while time.time() < deadline:
+            try:
+                raw = await asyncio.wait_for(
+                    self._process.stdout.readline(),
+                    timeout=min(30, deadline - time.time())
+                )
+            except asyncio.TimeoutError:
+                break
+
+            if not raw:
+                break
+
+            line = raw.decode().strip()
+            if not line:
+                continue
+
+            try:
+                chunk = json.loads(line)
+                msg_type = chunk.get("type", "")
+
+                # Collect text from assistant messages
+                if msg_type == "assistant" and "content" in chunk:
+                    for block in chunk["content"]:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            response_text += block["text"]
+
+                # Result message = final response
+                if msg_type == "result":
+                    result_text = chunk.get("result", "")
+                    if result_text:
+                        response_text = result_text
+                    break
+
+            except json.JSONDecodeError:
+                continue
+
+        if not response_text:
+            raise ClaudeBridgeError("No response from session")
+
+        return response_text
+
+    async def _oneshot(self, prompt, system_prompt, timeout):
+        """Fallback: one-shot claude -p call."""
+        cmd = [
+            self._cli, '-p', prompt,
+            '--output-format', 'text',
+            '--max-turns', '15',
+            '--add-dir', self._install_dir,
+            '--permission-mode', 'bypassPermissions',
+        ]
+        if system_prompt:
+            cmd.extend(['--append-system-prompt', system_prompt])
+
+        proc = await self._create_subprocess(
+            cmd,
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-
-        assert process.stdout is not None
-
         try:
-            async for raw_line in process.stdout:
-                line = raw_line.decode("utf-8", errors="replace").strip()
-                if not line:
-                    continue
-                try:
-                    yield json.loads(line)
-                except json.JSONDecodeError:
-                    pass
-        finally:
-            if process.returncode is None:
-                process.kill()
-                await process.wait()
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            raise ClaudeBridgeError(f"Timed out after {timeout}s")
 
-    async def execute_in_project(
-        self,
-        task: str,
-        project_path: str,
-        system_prompt: str = "",
-        timeout: int = 300,
-        max_turns: int = 10,
-    ) -> str:
-        """Execute a task scoped to a project directory."""
-        cmd = self._build_cmd(
-            task,
-            system_prompt,
-            output_format="text",
-            extra_args=[
-                "--cwd", project_path,
-                "--max-turns", str(max_turns),
-            ],
+        if proc.returncode != 0:
+            raise ClaudeBridgeError(f"CLI error: {stderr.decode()[:300]}")
+
+        return stdout.decode().strip()
+
+    async def execute_in_project(self, task, project_path, system_prompt="", timeout=300):
+        """Execute task in specific project directory (uses one-shot with --add-dir)."""
+        cmd = [
+            self._cli, '-p', task,
+            '--output-format', 'text',
+            '--max-turns', '15',
+            '--add-dir', project_path,
+            '--permission-mode', 'bypassPermissions',
+        ]
+        if system_prompt:
+            cmd.extend(['--append-system-prompt', system_prompt])
+
+        proc = await self._create_subprocess(
+            cmd,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
-        stdout = await self._run(cmd, timeout)
-        return stdout.strip()
-
-    async def check_available(self) -> bool:
-        """Return True if claude CLI is installed."""
         try:
-            proc = await asyncio.create_subprocess_exec(
-                self._cli, "--version",
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            raise ClaudeBridgeError(f"Timed out after {timeout}s")
+
+        if proc.returncode != 0:
+            raise ClaudeBridgeError(f"CLI error: {stderr.decode()[:300]}")
+
+        return stdout.decode().strip()
+
+    async def check_available(self):
+        """Check if claude CLI is installed."""
+        try:
+            proc = await self._create_subprocess(
+                [self._cli, '--version'],
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
-            version = stdout.decode("utf-8", errors="replace").strip()
+            version = stdout.decode().strip()
             log.info("claude_bridge.available", version=version)
             return proc.returncode == 0
-        except (FileNotFoundError, asyncio.TimeoutError, OSError) as exc:
-            log.warning("claude_bridge.not_available", error=str(exc))
+        except Exception as e:
+            log.warning("claude_bridge.not_available", error=str(e))
             return False
 
-    # ------------------------------------------------------------------
-    # Internals
-    # ------------------------------------------------------------------
-
-    def _build_cmd(
-        self,
-        prompt: str,
-        system_prompt: str,
-        output_format: str,
-        extra_args: list[str] | None = None,
-    ) -> list[str]:
-        """Build the CLI argument list."""
-        cmd: list[str] = [
-            self._cli,
-            "-p", prompt,
-            "--output-format", output_format,
-            "--max-turns", str(self._max_turns),
-            # CRITICAL: bypass permission prompts so Claude doesn't block
-            # waiting for terminal input that nobody will see.
-            # Our own security layer (SecurityGuardian) handles permissions.
-            "--permission-mode", "bypassPermissions",
-        ]
-
-        if system_prompt:
-            cmd.extend(["--append-system-prompt", system_prompt])
-
-        if extra_args:
-            cmd.extend(extra_args)
-
-        return cmd
-
-    async def _run(self, cmd: list[str], timeout: int) -> str:
-        """Execute cmd as subprocess with timeout, return stdout."""
-        log.debug(
-            "claude_bridge.exec",
-            cmd_preview=" ".join(shlex.quote(c) for c in cmd[:6]) + " ...",
-            timeout=timeout,
-        )
-
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                process.communicate(),
-                timeout=timeout,
-            )
-        except asyncio.TimeoutError:
-            if process.returncode is None:
-                process.kill()
-                await process.wait()
-            raise ClaudeBridgeError(
-                f"Claude CLI timed out after {timeout}s"
-            ) from None
-        except FileNotFoundError:
-            raise ClaudeBridgeError(
-                f"Claude CLI not found at '{self._cli}'."
-            ) from None
-
-        stdout = stdout_bytes.decode("utf-8", errors="replace")
-        stderr = stderr_bytes.decode("utf-8", errors="replace")
-
-        if process.returncode != 0:
-            log.error(
-                "claude_bridge.cli_error",
-                returncode=process.returncode,
-                stderr=stderr[:500],
-            )
-            raise ClaudeBridgeError(
-                f"Claude CLI exited with code {process.returncode}: "
-                f"{stderr[:300]}"
-            )
-
-        return stdout
-
-    @staticmethod
-    def _extract_result(stdout: str) -> str:
-        """Parse JSON output and extract the result text."""
-        stdout = stdout.strip()
-        if not stdout:
-            raise ClaudeBridgeError("Claude CLI returned empty output")
-
-        try:
-            data = json.loads(stdout)
-        except json.JSONDecodeError:
-            # Try last line if output has preamble
-            for line in reversed(stdout.splitlines()):
-                line = line.strip()
-                if line.startswith("{"):
-                    try:
-                        data = json.loads(line)
-                        break
-                    except json.JSONDecodeError:
-                        continue
-            else:
-                # Not JSON — return raw text
-                return stdout.strip()
-
-        if isinstance(data, dict):
-            result = data.get("result", "")
-            if result:
-                return str(result)
-            if "content" in data:
-                parts = []
-                for block in data["content"]:
-                    if isinstance(block, dict) and block.get("type") == "text":
-                        parts.append(block["text"])
-                if parts:
-                    return "\n".join(parts)
-
-        return stdout.strip()
+    @property
+    def install_dir(self):
+        return self._install_dir

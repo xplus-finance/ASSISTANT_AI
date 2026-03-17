@@ -58,3 +58,6 @@ Thumbs.db
 
 # --- Jupyter (por si se usan notebooks para pruebas) ---
 .ipynb_checkpoints/
+
+# --- Claude Code ---
+CLAUDE.md

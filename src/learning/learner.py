@@ -129,7 +129,7 @@ class Learner:
         else:
             prompt = _SUMMARISE_PROMPT.format(topic=topic, content=combined)
             try:
-                summary = await asyncio.to_thread(self._claude.send, prompt)
+                summary = await asyncio.to_thread(self._claude.ask, prompt)
             except Exception:
                 log.exception("learner.claude_summarise_failed", topic=topic)
                 summary = f"Recopile informacion sobre {topic} pero no pude resumirla."
@@ -182,7 +182,7 @@ class Learner:
         prompt = _EXTRACT_FACTS_PROMPT.format(messages=formatted)
 
         try:
-            raw_response = await asyncio.to_thread(self._claude.send, prompt)
+            raw_response = await asyncio.to_thread(self._claude.ask, prompt)
         except Exception:
             log.exception("learner.fact_extraction_claude_failed")
             return []
