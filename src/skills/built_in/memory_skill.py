@@ -12,7 +12,7 @@ from typing import Any
 
 import structlog
 
-from src.memory.engine import MemoryEngine
+from src.memory.engine import MemoryEngine, sanitize_fts_query
 from src.skills.base_skill import BaseSkill, SkillResult
 
 log = structlog.get_logger("assistant.skills.memory")
@@ -158,6 +158,13 @@ class MemorySkill(BaseSkill):
                 message="Uso: !memoria buscar <termino>",
             )
 
+        safe_query = sanitize_fts_query(query.strip())
+        if not safe_query:
+            return SkillResult(
+                success=False,
+                message="La busqueda no contiene terminos validos.",
+            )
+
         rows = memory.fetchall_dicts(
             """
             SELECT f.id, f.category, f.fact, f.confidence, f.learned_at
@@ -167,7 +174,7 @@ class MemorySkill(BaseSkill):
             ORDER BY rank
             LIMIT 10
             """,
-            (query.strip(),),
+            (safe_query,),
         )
 
         if not rows:

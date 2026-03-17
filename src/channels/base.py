@@ -14,21 +14,7 @@ from typing import Any, Callable, Coroutine
 
 @dataclass
 class IncomingMessage:
-    """Normalised representation of a message received from any channel.
-
-    Attributes:
-        chat_id: Unique identifier for the conversation/chat.
-        sender_id: Unique identifier for the message sender.
-        text: Text content (None for non-text messages).
-        audio_path: Local path to a downloaded audio file, if present.
-        image_path: Local path to a downloaded image file, if present.
-        document_path: Local path to a downloaded document, if present.
-        message_type: One of ``'text'``, ``'audio'``, ``'image'``,
-            ``'document'``.
-        channel: Channel identifier, e.g. ``'telegram'``, ``'whatsapp'``.
-        raw: The original, unmodified message object from the channel
-            library — useful for accessing channel-specific features.
-    """
+    """Normalised representation of a message received from any channel."""
 
     chat_id: str
     sender_id: str
@@ -41,55 +27,29 @@ class IncomingMessage:
     raw: Any = field(default=None, repr=False)
 
 
-# Type alias for the async callback that the assistant core provides.
 MessageHandler = Callable[[IncomingMessage], Coroutine[Any, Any, None]]
 
 
 class Channel(ABC):
-    """Abstract messaging channel.
-
-    Subclasses must implement every abstract method.  The assistant core
-    calls ``set_message_handler`` once to register its callback, then
-    ``start`` to begin receiving messages.
-    """
+    """Abstract messaging channel."""
 
     @abstractmethod
-    async def start(self) -> None:
-        """Start listening for incoming messages."""
-        ...
+    async def start(self) -> None: ...
 
     @abstractmethod
-    async def stop(self) -> None:
-        """Gracefully shut down the channel."""
-        ...
+    async def stop(self) -> None: ...
 
     @abstractmethod
-    async def send_text(self, chat_id: str, text: str) -> None:
-        """Send a text message to a chat."""
-        ...
+    async def send_text(self, chat_id: str, text: str) -> None: ...
 
     @abstractmethod
-    async def send_audio(self, chat_id: str, audio_path: str) -> None:
-        """Send a voice/audio note to a chat."""
-        ...
+    async def send_audio(self, chat_id: str, audio_path: str) -> None: ...
 
     @abstractmethod
-    async def send_document(
-        self, chat_id: str, path: str, caption: str = ""
-    ) -> None:
-        """Send a file/document to a chat."""
-        ...
+    async def send_document(self, chat_id: str, path: str, caption: str = "") -> None: ...
 
     @abstractmethod
-    async def send_typing(self, chat_id: str) -> None:
-        """Send a "typing…" indicator to a chat."""
-        ...
+    async def send_typing(self, chat_id: str) -> None: ...
 
     @abstractmethod
-    def set_message_handler(self, handler: MessageHandler) -> None:
-        """Register the callback invoked for every incoming message.
-
-        The handler receives an ``IncomingMessage`` and should return
-        once processing is complete.
-        """
-        ...
+    def set_message_handler(self, handler: MessageHandler) -> None: ...

@@ -118,10 +118,11 @@ class TelegramChannel(Channel):
         """Send a photo to a chat."""
         if self._app is None:
             raise RuntimeError("Telegram bot is not running.")
-        with open(photo_path, "rb") as photo:
+
+        with open(photo_path, "rb") as photo_file:
             await self._app.bot.send_photo(
                 chat_id=int(chat_id),
-                photo=photo,
+                photo=photo_file,
                 caption=caption or None,
             )
 
@@ -201,6 +202,8 @@ class TelegramChannel(Channel):
             message_type = "document"
             tg_file = await msg.document.get_file()
             filename = msg.document.file_name or tg_file.file_unique_id
+            # Sanitize filename to prevent path traversal
+            filename = os.path.basename(filename)
             document_path = os.path.join(self._temp_dir, filename)
             await tg_file.download_to_drive(document_path)
             text = msg.caption

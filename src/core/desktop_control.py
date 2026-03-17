@@ -12,6 +12,7 @@ On Windows: uses pyautogui, pyperclip, and PowerShell.
 """
 
 import asyncio
+import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -33,7 +34,8 @@ class DesktopControl:
         Args:
             region: Optional region "x,y,width,height" or None for full screen
         """
-        output = tempfile.mktemp(suffix=".png", prefix="screenshot_")
+        fd, output = tempfile.mkstemp(suffix=".png", prefix="screenshot_")
+        os.close(fd)
 
         if IS_WINDOWS:
             return await self._screenshot_windows(output)
@@ -209,6 +211,7 @@ class DesktopControl:
     async def _focus_window_windows(self, window_id: str, title_match: str) -> bool:
         """Focus window via PowerShell."""
         if window_id:
+            window_id = str(int(window_id))  # Sanitize: raises ValueError if not numeric
             ps_cmd = (
                 f"$p = Get-Process -Id {window_id} -ErrorAction SilentlyContinue; "
                 "if ($p) { "
@@ -216,6 +219,7 @@ class DesktopControl:
                 "[Microsoft.VisualBasic.Interaction]::AppActivate($p.Id) }"
             )
         elif title_match:
+            title_match = title_match.replace("'", "''")  # PowerShell single-quote escape
             ps_cmd = (
                 "[void][System.Reflection.Assembly]::LoadWithPartialName('Microsoft.VisualBasic'); "
                 f"[Microsoft.VisualBasic.Interaction]::AppActivate('{title_match}')"
@@ -245,6 +249,124 @@ class DesktopControl:
         if 1 <= tab_number <= 9:
             await self.press_keys("ctrl", str(tab_number))
             log.info("desktop.browser_tab_number", tab=tab_number)
+
+    async def list_browser_tabs_cdp(self, port: int = 9222) -> list[dict]:
+        """List ALL browser tabs via Chrome DevTools Protocol (CDP).
+
+        Requires Chrome/Chromium started with --remote-debugging-port=9222.
+        Returns list of dicts with: id, title, url, type, active.
+        Returns empty list if CDP is not available.
+        """
+        try:
+            import urllib.request
+            url = f"http://localhost:{port}/json/list"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=2) as resp:
+                import json
+                data = json.loads(resp.read().decode())
+            tabs = []
+            for i, item in enumerate(data):
+                if item.get("type") in ("page", "tab", None):
+                    tabs.append({
+                        "index": i,
+                        "id": item.get("id", ""),
+                        "title": item.get("title", "(sin título)"),
+                        "url": item.get("url", ""),
+                        "active": False,  # CDP no expone cual es la activa directamente
+                        "type": item.get("type", "page"),
+                    })
+            log.info("desktop.cdp_tabs", count=len(tabs), port=port)
+            return tabs
+        except Exception as e:
+            log.debug("desktop.cdp_not_available", port=port, error=str(e))
+            return []
+
+    async def scan_all_tabs(self, max_tabs: int = 60, delay_ms: int = 400) -> list[dict]:
+        """Scan ALL open browser tabs by iterating Ctrl+Tab.
+
+        Works for ALL browsers (Chrome, Firefox, Edge, etc.) without CDP.
+        Reads window title at each step to capture tab title.
+        Stops when a title repeats (full cycle) or max_tabs is reached.
+
+        Returns list of dicts: {index, title, screenshot_path (optional)}.
+        """
+        if IS_WINDOWS:
+            get_title_cmd = None  # use PowerShell fallback
+        else:
+            if not shutil.which("xdotool"):
+                raise RuntimeError("xdotool no instalado. Ejecuta: sudo apt install xdotool")
+
+        async def _get_window_title() -> str:
+            """Get the active window title."""
+            if IS_WINDOWS:
+                ps = (
+                    "Add-Type -AssemblyName System.Windows.Forms; "
+                    "[System.Windows.Forms.Screen]::PrimaryScreen | Out-Null; "
+                    "$wnd = [System.Runtime.InteropServices.Marshal]::GetForegroundWindow(); "
+                    "$buf = [System.Text.StringBuilder]::new(256); "
+                    "[void][System.Runtime.InteropServices.Marshal]::; "
+                    "Get-Process | Where-Object {$_.MainWindowHandle -eq $wnd} "
+                    "| Select-Object -ExpandProperty MainWindowTitle"
+                )
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        "powershell", "-Command", ps,
+                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+                    )
+                    out, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+                    return out.decode().strip()
+                except Exception:
+                    return ""
+            else:
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        "xdotool", "getactivewindow", "getwindowname",
+                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+                    )
+                    out, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+                    return out.decode().strip()
+                except Exception:
+                    return ""
+
+        tabs = []
+        seen_titles: list[str] = []
+
+        # Record the starting tab title
+        first_title = await _get_window_title()
+        if first_title:
+            tabs.append({"index": 0, "title": first_title})
+            seen_titles.append(first_title)
+
+        for i in range(1, max_tabs):
+            await self.switch_browser_tab("next")
+            await asyncio.sleep(delay_ms / 1000.0)
+
+            title = await _get_window_title()
+            if not title:
+                continue
+
+            # Detect full cycle: browser window title goes back to the start
+            # (strip browser suffix like "- Chromium", "- Firefox", "- Google Chrome")
+            def _strip_browser(t: str) -> str:
+                for suffix in (" - Chromium", " - Google Chrome", " - Chrome",
+                               " - Mozilla Firefox", " - Firefox", " - Microsoft Edge"):
+                    if t.endswith(suffix):
+                        return t[:-len(suffix)]
+                return t
+
+            stripped = _strip_browser(title)
+            first_stripped = _strip_browser(seen_titles[0]) if seen_titles else ""
+
+            # Cycle complete if we're back at the first tab
+            if i > 0 and stripped == first_stripped:
+                log.info("desktop.scan_tabs_cycle_complete", total=len(tabs))
+                break
+
+            tabs.append({"index": i, "title": title})
+            seen_titles.append(title)
+
+        log.info("desktop.scan_all_tabs", found=len(tabs))
+        return tabs
 
     async def send_to_claude_code(self, message: str, window_title: str = "Claude") -> bool:
         """Send a message to another Claude Code CLI instance.

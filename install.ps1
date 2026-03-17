@@ -592,7 +592,7 @@ if (Ask-Confirm "Activar inicio automatico?") {
             -Action $action `
             -Trigger $trigger `
             -Settings $settings `
-            -RunLevel Highest `
+            -RunLevel Limited `
             -Force | Out-Null
 
         Write-Step "Tarea de inicio automatico creada: '$taskName'"

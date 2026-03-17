@@ -48,7 +48,7 @@ class Synthesizer:
 
         # Voice parameters (can be changed at runtime)
         self._pitch: str = "low"      # Default: masculine/grave
-        self._speed: float = 1.15     # Default: slightly faster than normal
+        self._speed: float = 1.78     # Default: fast, user preference
         self._language: str = "es"
 
     def set_voice_params(

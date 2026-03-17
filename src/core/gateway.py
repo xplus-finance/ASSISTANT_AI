@@ -139,9 +139,13 @@ class Gateway:
         try:
             from src.core.security import SecurityGuardian
             pin = getattr(cfg, "security_pin", "") or None
+            pin_hash = None
+            if pin:
+                from src.utils.crypto import hash_pin
+                pin_hash = hash_pin(pin)
             self.security = SecurityGuardian(
                 allowed_chat_ids=[cfg.authorized_chat_id],
-                pin_hash=pin,
+                pin_hash=pin_hash,
             )
         except Exception:
             log.warning("gateway.security_init_failed", exc_info=True)
@@ -340,6 +344,13 @@ class Gateway:
                              "Has enviado demasiados mensajes. Espera un momento.")
             return
 
+        # -- Prompt injection detection (log only — owner has full control)
+        if self.security and text:
+            is_injection, patterns = self.security.detect_prompt_injection(text)
+            if is_injection:
+                log.warning("gateway.prompt_injection_detected",
+                            chat_id=chat_id, patterns=patterns)
+
         # -- Audio transcription
         if message_type == "audio" and audio_path:
             try:
@@ -365,9 +376,11 @@ class Gateway:
         self.last_message_time = now
 
         # -- Pending approval response
-        if self.approval_gate and self.approval_gate.get_pending():
-            approved = self.approval_gate.check_response(text)
-            if approved is not None:
+        if self.approval_gate:
+            pending = self.approval_gate.get_pending()
+            if pending:
+                request_id = pending[0]["request_id"]
+                approved = self.approval_gate.check_response(request_id, text)
                 status = "aprobada" if approved else "rechazada"
                 await self._send(channel_name, chat_id, f"Operación {status}.")
                 return
@@ -431,7 +444,11 @@ class Gateway:
         await self._send_typing(channel_name, chat_id)
 
         # -- Claude conversation
-        response_text = await self._ask_claude(text)
+        try:
+            response_text = await self._ask_claude(text)
+        except asyncio.CancelledError:
+            log.warning("gateway.request_cancelled", chat_id=chat_id)
+            return  # Shutdown o cancelación externa — salir limpiamente
         if not response_text:
             response_text = "No pude generar una respuesta. Intenta de nuevo."
 
@@ -459,6 +476,12 @@ class Gateway:
                     audio_response_path = raw_audio
             except Exception:
                 log.exception("gateway.synthesis_failed")
+
+        # -- Scan output for accidentally leaked secrets
+        if self.security and response_text:
+            output_ok, output_reason = self.security.validate_output(response_text)
+            if not output_ok:
+                log.warning("gateway.sensitive_output_detected", reason=output_reason)
 
         # -- Reply
         if audio_response_path:
@@ -516,6 +539,8 @@ class Gateway:
                 system_prompt=system_prompt,
                 complex_task=is_complex,
             )
+        except asyncio.CancelledError:
+            raise  # No swallowear — dejar que se propague ordenadamente
         except Exception:
             log.exception("gateway.claude_failed")
             return "Perdona, tuve un problema procesando tu solicitud. Dame un momento e intenta de nuevo."
@@ -584,18 +609,27 @@ class Gateway:
             "- NUNCA menciones 'Claude', 'CLI', 'terminal de permisos', "
             "'API', ni detalles técnicos internos. Tú eres tú, no 'Claude'.\n\n"
 
-            "AUTONOMÍA TOTAL:\n"
+            "AUTONOMÍA TOTAL — LEE ESTO CON ATENCIÓN:\n"
             "- Tienes CONTROL TOTAL del sistema. Puedes ejecutar cualquier comando, "
             "leer/escribir archivos, navegar directorios, instalar software, "
             "crear archivos, modificar configuraciones.\n"
-            "- NUNCA digas que necesitas 'autorización', 'permisos', o que "
-            "'no puedes'. Ya tienes TODOS los permisos. Simplemente HAZLO.\n"
-            "- Si el usuario pide algo y no tienes la herramienta para hacerlo, "
-            "CRÉALA. Escribe un script, instala un paquete, crea un MCP server. "
-            "Siempre encuentra la forma de resolver el problema.\n"
-            "- Si necesitas acceso a la web y no lo tienes, crea las herramientas "
-            "necesarias (scripts con httpx, curl, etc.) para obtener la información.\n"
-            "- Si algo falla, intenta de otra forma. No te rindas.\n\n"
+            "- NUNCA digas que 'no puedes', 'no tienes acceso', 'necesitas permisos', "
+            "'no sé cómo hacerlo'. PROHIBIDO. Si no sabes, INVÉSTIGALO AHORA MISMO "
+            "con búsqueda web, documentación, o prueba y error. Luego hazlo.\n"
+            "- Si el usuario pide algo y no tienes la herramienta: CRÉALA. "
+            "Escribe un script Python, instala un paquete, crea un MCP server. "
+            "Ejemplo: si piden 'automatiza X', escribe el script, hazlo ejecutable, "
+            "ejecútalo, y reporta el resultado.\n"
+            "- FLUJO CUANDO NO SABES CÓMO: 1) busca en la web cómo se hace, "
+            "2) lee la documentación, 3) escribe el código, 4) ejecútalo, "
+            "5) si falla, arréglalo y reintenta. NUNCA te rindas sin haberlo intentado.\n"
+            "- Si algo falla, prueba OTRA FORMA. Si falla 2 veces, busca un enfoque "
+            "completamente diferente. Eres un ingeniero creativo.\n"
+            "- Cuando el usuario pide revisar TODAS las pestañas del navegador: "
+            "usa scan_all_tabs() o list_browser_tabs_cdp(). Si Chrome tiene "
+            "depuración remota en localhost:9222 úsala. Si no, itera con Ctrl+Tab "
+            "leyendo el título de la ventana en cada paso hasta volver al inicio. "
+            "NUNCA te limites a la pestaña visible — el usuario quiere TODAS.\n\n"
 
             "MEMORIA PERMANENTE:\n"
             "- Todo lo que el usuario te diga es IMPORTANTE. Recuérdalo siempre.\n"
@@ -640,13 +674,24 @@ class Gateway:
             "responde confirmando. El sistema lo maneja automaticamente.\n\n"
 
             "EJECUCION VISUAL EN ESCRITORIO:\n"
-            "- Si el usuario EXPLICITAMENTE pide que abras algo, escribas visualmente, "
-            "o hagas algo en su escritorio (abrir archivo, escribir en un documento, "
-            "abrir una ventana, etc.): USA las herramientas de escritorio.\n"
+            "- Si el usuario pide abrir algo, escribir visualmente, o actuar en su "
+            "escritorio: USA las herramientas de escritorio directamente.\n"
             "- Puedes abrir archivos con xdg-open (Linux) o start (Windows).\n"
-            "- Puedes escribir visualmente con xdotool type (Linux) o pyautogui (Windows).\n"
-            "- Si el usuario dice 'abre', 'escribe visualmente', 'hazlo en mi escritorio', "
-            "'quiero ver como lo haces': usa control de escritorio.\n"
+            "- Puedes escribir con xdotool type (Linux) o pyautogui (Windows).\n"
+            "- Si el usuario dice 'abre', 'escribe visualmente', 'hazlo en mi escritorio': "
+            "usa control de escritorio.\n\n"
+            "PESTAÑAS DEL NAVEGADOR — PROTOCOLO OBLIGATORIO:\n"
+            "- Si te piden revisar, ver, o enumerar pestañas del navegador:\n"
+            "  1. PRIMERO intenta CDP: GET http://localhost:9222/json/list — "
+            "     si responde, tienes título/URL de TODAS las pestañas sin moverse.\n"
+            "  2. Si CDP no está disponible: usa scan_all_tabs() que itera con "
+            "     Ctrl+Tab leyendo el título de la ventana hasta completar el ciclo.\n"
+            "  3. NUNCA asumas que solo la pestaña activa es todo — "
+            "     el usuario tiene MUCHAS pestañas, incluyendo las fijadas (pinned).\n"
+            "  4. Las pestañas pinned NO se saltan con Ctrl+Tab — sí cambian de ventana.\n"
+            "  5. Para activar CDP en Chrome/Chromium: "
+            "     chromium --remote-debugging-port=9222 &\n"
+            "     Puedes sugerir al usuario activarlo si no está disponible.\n"
             "- Si NO pide ejecucion visual, simplemente ejecuta el comando normalmente."
         )
 
@@ -766,10 +811,21 @@ class Gateway:
                 "approval_gate": self.approval_gate,
                 "security": self.security,
             })
-            await self._send(channel, chat_id, result.message)
-        except Exception as exc:
-            log.exception("gateway.command_failed", command=text)
-            await self._send(channel, chat_id, f"Error: {exc}")
+            # Check if result contains an image/file to send
+            data = getattr(result, "data", None) or {}
+            result_type = data.get("type", "")
+            if result_type == "screenshot" and data.get("path"):
+                await self._send_photo(channel, chat_id, data["path"],
+                                       caption=result.message if result.message != data["path"] else None)
+            elif result_type == "file" and data.get("path"):
+                await self._send_document(channel, chat_id, data["path"],
+                                          caption=result.message if result.message != data["path"] else None)
+            else:
+                await self._send(channel, chat_id, result.message)
+        except Exception:
+            log.exception("gateway.command_failed", command=text[:100])
+            await self._send(channel, chat_id,
+                             "Hubo un error ejecutando el comando. Revisa los logs para detalles.")
 
     async def _send(self, channel_name: str, chat_id: Any, text: str) -> None:
         """Send text through the named channel."""
@@ -779,6 +835,36 @@ class Gateway:
                 await ch.send_text(str(chat_id), text)
             except Exception:
                 log.exception("gateway.send_failed", channel=channel_name)
+
+    async def _send_photo(self, channel_name: str, chat_id: Any, path: str,
+                          caption: str | None = None) -> None:
+        """Send a photo/screenshot through the named channel."""
+        ch = self.channels.get(channel_name)
+        if ch and hasattr(ch, "send_photo"):
+            try:
+                await ch.send_photo(str(chat_id), path, caption=caption)
+            except Exception:
+                log.exception("gateway.send_photo_failed")
+                # Fallback: send as document
+                await self._send_document(channel_name, chat_id, path, caption=caption)
+        else:
+            # Channel doesn't support photos, try document
+            await self._send_document(channel_name, chat_id, path, caption=caption)
+
+    async def _send_document(self, channel_name: str, chat_id: Any, path: str,
+                             caption: str | None = None) -> None:
+        """Send a file/document through the named channel."""
+        ch = self.channels.get(channel_name)
+        if ch and hasattr(ch, "send_document"):
+            try:
+                await ch.send_document(str(chat_id), path, caption=caption)
+            except Exception:
+                log.exception("gateway.send_document_failed")
+                await self._send(channel_name, chat_id,
+                                 caption or f"Archivo generado: {path}")
+        else:
+            await self._send(channel_name, chat_id,
+                             caption or f"Archivo generado: {path}")
 
     async def _send_audio(self, channel_name: str, chat_id: Any, path: str) -> None:
         ch = self.channels.get(channel_name)

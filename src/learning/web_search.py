@@ -8,9 +8,11 @@ information about arbitrary topics.
 
 from __future__ import annotations
 
+import ipaddress
 import re
+import socket
 from dataclasses import dataclass
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 import httpx
 import structlog
@@ -34,6 +36,23 @@ _DEFAULT_HEADERS = {
 
 _FETCH_TIMEOUT = 15.0  # seconds
 _SEARCH_TIMEOUT = 10.0
+
+
+def _is_safe_url(url: str) -> bool:
+    """Check that URL doesn't point to private/internal IP addresses."""
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        # Resolve hostname to IP
+        ip = ipaddress.ip_address(socket.gethostbyname(hostname))
+        # Block private, loopback, link-local
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            return False
+        return True
+    except (socket.gaierror, ValueError):
+        return False
 
 # Tags whose text we strip when extracting page content
 _NOISE_TAGS = {"script", "style", "nav", "header", "footer", "aside", "form", "noscript", "svg"}
@@ -121,6 +140,10 @@ class WebSearcher:
             Extracted text, or an empty string on failure.
         """
         log.debug("web_search.fetching_page", url=url)
+
+        if not _is_safe_url(url):
+            log.warning("web_search.blocked_unsafe_url", url=url)
+            return ""
 
         try:
             async with httpx.AsyncClient(

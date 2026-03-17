@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     # -- Audio --------------------------------------------------------------
     whisper_model: str = "medium"
     tts_engine: str = "auto"
+    tts_voice_pitch: int = -4       # semitones: negative = deeper (range -12 to 12)
+    tts_voice_speed: float = 1.55   # multiplier: >1 = faster (1.55 = 55% faster)
+    tts_voice_gender: str = "male"  # male / female
 
     # -- Database -----------------------------------------------------------
     db_encryption_key: str = ""
@@ -128,9 +131,32 @@ async def main() -> None:
         data_dir=settings.data_dir,
     )
 
-    # 3. Ensure critical directories exist
+    # 3. Ensure critical directories exist + harden permissions
     for directory in (settings.data_dir, settings.logs_dir, settings.skills_dir):
         Path(directory).mkdir(parents=True, exist_ok=True)
+
+    # Security: restrict file permissions on sensitive paths (Linux/Mac only)
+    if not IS_WINDOWS:
+        import os, stat
+        _OWNER_ONLY_DIR = stat.S_IRWXU  # 700
+        _OWNER_ONLY_FILE = stat.S_IRUSR | stat.S_IWUSR  # 600
+        for d in (settings.data_dir, settings.logs_dir):
+            try:
+                os.chmod(d, _OWNER_ONLY_DIR)
+            except OSError:
+                pass
+        env_file = Path(".env")
+        if env_file.exists():
+            try:
+                os.chmod(env_file, _OWNER_ONLY_FILE)
+            except OSError:
+                pass
+        db_file = Path(settings.data_dir) / "assistant.db"
+        if db_file.exists():
+            try:
+                os.chmod(db_file, _OWNER_ONLY_FILE)
+            except OSError:
+                pass
 
     # 4. Create the Gateway
     from src.core.gateway import Gateway

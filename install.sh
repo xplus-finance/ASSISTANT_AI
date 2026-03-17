@@ -54,6 +54,15 @@ step_done() {
 
 clear_line() { printf "\r\033[K"; }
 
+# Portable sed -i (macOS requires '' argument, Linux doesn't)
+_sed_i() {
+    if [[ "$(uname)" == "Darwin" ]]; then
+        sed -i '' "$@"
+    else
+        sed -i "$@"
+    fi
+}
+
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$PROJECT_DIR"
 ENV_FILE="$PROJECT_DIR/.env"
@@ -121,14 +130,22 @@ if [[ -z "$PYTHON_CMD" ]]; then
     echo -e "  Necesitas la versión 3.12 o superior."
     echo ""
     echo -e "  ${BOLD}¿Cómo instalarlo?${NC}"
-    echo -e "  Copia y pega estos comandos en otra terminal:"
     echo ""
-    echo -e "    ${CYAN}sudo apt update${NC}"
-    echo -e "    ${CYAN}sudo apt install -y python3.12 python3.12-venv python3.12-dev${NC}"
-    echo ""
-    echo -e "  ${DIM}Si tu sistema no tiene Python 3.12 disponible:${NC}"
-    echo -e "    ${CYAN}sudo add-apt-repository ppa:deadsnakes/ppa${NC}"
-    echo -e "    ${CYAN}sudo apt update && sudo apt install -y python3.12 python3.12-venv python3.12-dev${NC}"
+    if command -v brew &>/dev/null; then
+        echo -e "  ${CYAN}macOS (Homebrew):${NC}"
+        echo -e "    ${CYAN}brew install python@3.12${NC}"
+    elif command -v apt &>/dev/null; then
+        echo -e "  ${CYAN}Ubuntu/Debian:${NC}"
+        echo -e "    ${CYAN}sudo apt update && sudo apt install -y python3.12 python3.12-venv${NC}"
+    elif command -v dnf &>/dev/null; then
+        echo -e "  ${CYAN}Fedora/RHEL:${NC}"
+        echo -e "    ${CYAN}sudo dnf install -y python3.12${NC}"
+    elif command -v pacman &>/dev/null; then
+        echo -e "  ${CYAN}Arch Linux:${NC}"
+        echo -e "    ${CYAN}sudo pacman -S python${NC}"
+    else
+        echo -e "  Instala Python 3.12+ desde: ${CYAN}https://www.python.org/downloads/${NC}"
+    fi
     echo ""
     echo -e "  Después de instalarlo, vuelve a ejecutar este instalador."
     exit 1
@@ -151,12 +168,26 @@ else
     echo ""
     if confirm "¿Quieres que lo instale automáticamente?"; then
         working "Instalando ffmpeg (puede pedir tu contraseña)..."
-        sudo apt update -qq > /dev/null 2>&1 && sudo apt install -y -qq ffmpeg > /dev/null 2>&1
-        info "ffmpeg instalado correctamente."
+        if command -v brew &>/dev/null; then
+            brew install ffmpeg > /dev/null 2>&1
+        elif command -v apt &>/dev/null; then
+            sudo apt update -qq > /dev/null 2>&1 && sudo apt install -y -qq ffmpeg > /dev/null 2>&1
+        elif command -v dnf &>/dev/null; then
+            sudo dnf install -y ffmpeg-free > /dev/null 2>&1
+        elif command -v pacman &>/dev/null; then
+            sudo pacman -S --noconfirm ffmpeg > /dev/null 2>&1
+        else
+            error "No se detectó un gestor de paquetes compatible."
+            echo -e "  Instala ffmpeg manualmente desde: ${CYAN}https://ffmpeg.org/download.html${NC}"
+        fi
+        if command -v ffmpeg &>/dev/null; then
+            info "ffmpeg instalado correctamente."
+        else
+            warn "No se pudo instalar ffmpeg. Los mensajes de voz no funcionarán."
+        fi
     else
-        error "ffmpeg es necesario para que el asistente procese audio."
-        echo -e "  Instálalo manualmente: ${CYAN}sudo apt install ffmpeg${NC}"
-        exit 1
+        warn "ffmpeg no instalado. Los mensajes de voz no funcionarán."
+        echo -e "  Instálalo después con tu gestor de paquetes (apt, brew, dnf, pacman)."
     fi
 fi
 
@@ -396,7 +427,7 @@ if [[ "${SKIP_ENV:-}" != "true" ]]; then
                 info "Token válido ✨"
                 echo -e "     ${DIM}Nombre del bot: ${BOT_NAME}${NC}"
                 echo -e "     ${DIM}Username: @${BOT_USERNAME}${NC}"
-                sed -i "s|^TELEGRAM_BOT_TOKEN=.*|TELEGRAM_BOT_TOKEN=$TG_TOKEN|" "$ENV_FILE"
+                _sed_i "s|^TELEGRAM_BOT_TOKEN=.*|TELEGRAM_BOT_TOKEN=$TG_TOKEN|" "$ENV_FILE"
                 break
             else
                 ERROR_DESC=$(echo "$RESULT" | grep -o '"description":"[^"]*"' | cut -d'"' -f4)
@@ -442,7 +473,7 @@ if [[ "${SKIP_ENV:-}" != "true" ]]; then
                 continue
             fi
 
-            sed -i "s|^AUTHORIZED_CHAT_ID=.*|AUTHORIZED_CHAT_ID=$TG_CHAT_ID|" "$ENV_FILE"
+            _sed_i "s|^AUTHORIZED_CHAT_ID=.*|AUTHORIZED_CHAT_ID=$TG_CHAT_ID|" "$ENV_FILE"
             info "ID configurado: ${BOLD}$TG_CHAT_ID${NC}"
             break
         done
@@ -683,7 +714,7 @@ case "$WHISPER_CHOICE" in
 esac
 
 if [[ -f "$ENV_FILE" ]]; then
-    sed -i "s|^WHISPER_MODEL=.*|WHISPER_MODEL=$WHISPER_MODEL|" "$ENV_FILE"
+    _sed_i "s|^WHISPER_MODEL=.*|WHISPER_MODEL=$WHISPER_MODEL|" "$ENV_FILE"
 fi
 info "Modelo configurado: ${BOLD}$WHISPER_MODEL${NC}"
 
@@ -763,7 +794,7 @@ case "$TZ_CHOICE" in
         ;;
 esac
 
-sed -i "s|^TIMEZONE=.*|TIMEZONE=$TZ_INPUT|" "$ENV_FILE"
+_sed_i "s|^TIMEZONE=.*|TIMEZONE=$TZ_INPUT|" "$ENV_FILE"
 info "Zona horaria: ${BOLD}$TZ_INPUT${NC}"
 
 step_done "8" "Zona horaria configurada"
@@ -784,14 +815,14 @@ read -r SEC_PIN
 
 if [[ -n "$SEC_PIN" ]]; then
     if [[ "$SEC_PIN" =~ ^[0-9]{4,8}$ ]]; then
-        sed -i "s|^SECURITY_PIN=.*|SECURITY_PIN=$SEC_PIN|" "$ENV_FILE"
+        _sed_i "s|^SECURITY_PIN=.*|SECURITY_PIN=$SEC_PIN|" "$ENV_FILE"
         info "PIN de seguridad configurado. 🔒"
     else
         warn "El PIN debe ser de 4 a 8 dígitos numéricos."
         ask "Inténtalo de nuevo (o Enter para omitir): "
         read -r SEC_PIN
         if [[ "$SEC_PIN" =~ ^[0-9]{4,8}$ ]]; then
-            sed -i "s|^SECURITY_PIN=.*|SECURITY_PIN=$SEC_PIN|" "$ENV_FILE"
+            _sed_i "s|^SECURITY_PIN=.*|SECURITY_PIN=$SEC_PIN|" "$ENV_FILE"
             info "PIN de seguridad configurado. 🔒"
         else
             info "PIN omitido. Puedes configurarlo después en el archivo .env"
@@ -806,7 +837,7 @@ echo ""
 # Generar clave de cifrado automáticamente
 working "Generando clave de cifrado para la base de datos..."
 DB_KEY=$($PYTHON_CMD -c "import secrets; print(secrets.token_hex(32))")
-sed -i "s|^DB_ENCRYPTION_KEY=.*|DB_ENCRYPTION_KEY=$DB_KEY|" "$ENV_FILE"
+_sed_i "s|^DB_ENCRYPTION_KEY=.*|DB_ENCRYPTION_KEY=$DB_KEY|" "$ENV_FILE"
 info "Clave de cifrado generada automáticamente. 🔐"
 echo -e "  ${DIM}Esta clave protege tus conversaciones y datos almacenados.${NC}"
 echo -e "  ${DIM}Se guardó en el archivo .env (no la compartas con nadie).${NC}"
@@ -832,6 +863,11 @@ working "Creando estructura de directorios..."
 for dir in data logs skills models data/knowledge data/projects data/daily mcps; do
     mkdir -p "$PROJECT_DIR/$dir"
 done
+
+# Security: restrict sensitive directories/files to owner only
+chmod 700 "$PROJECT_DIR/data" "$PROJECT_DIR/logs" 2>/dev/null
+chmod 600 "$PROJECT_DIR/.env" 2>/dev/null
+info "Permisos de seguridad aplicados (data/ y logs/ solo accesibles por ti)"
 info "Directorios creados:"
 echo -e "    ${DIM}📁 data/           — Tus datos y conversaciones${NC}"
 echo -e "    ${DIM}📁 data/knowledge/ — Base de conocimiento${NC}"
@@ -866,9 +902,9 @@ if confirm "¿Activar inicio automático?"; then
 
         CURRENT_USER=$(whoami)
         CURRENT_GROUP=$(id -gn)
-        sed -i "s|^User=.*|User=$CURRENT_USER|" "$TEMP_SERVICE"
-        sed -i "s|^Group=.*|Group=$CURRENT_GROUP|" "$TEMP_SERVICE"
-        sed -i "s|^ExecStart=.*|ExecStart=$PROJECT_DIR/.venv/bin/python -m src.main|" "$TEMP_SERVICE"
+        _sed_i "s|^User=.*|User=$CURRENT_USER|" "$TEMP_SERVICE"
+        _sed_i "s|^Group=.*|Group=$CURRENT_GROUP|" "$TEMP_SERVICE"
+        _sed_i "s|^ExecStart=.*|ExecStart=$PROJECT_DIR/.venv/bin/python -m src.main|" "$TEMP_SERVICE"
 
         sudo cp "$TEMP_SERVICE" /etc/systemd/system/ai-assistant.service
         sudo systemctl daemon-reload

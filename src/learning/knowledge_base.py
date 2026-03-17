@@ -13,7 +13,7 @@ from typing import Any
 
 import structlog
 
-from src.memory.engine import MemoryEngine
+from src.memory.engine import MemoryEngine, sanitize_fts_query
 
 log = structlog.get_logger("assistant.learning.knowledge_base")
 
@@ -106,6 +106,10 @@ class KnowledgeBase:
         seen_topics: set[str] = set()
 
         # -- FTS search -----------------------------------------------------
+        safe_query = sanitize_fts_query(query)
+        if not safe_query:
+            return results
+
         try:
             sql = """
                 SELECT k.id, k.topic, k.content, k.source_url, k.learned_at
@@ -115,7 +119,7 @@ class KnowledgeBase:
                 ORDER BY rank
                 LIMIT ?
             """
-            rows = self._engine.fetchall_dicts(sql, (query, limit))
+            rows = self._engine.fetchall_dicts(sql, (safe_query, limit))
             for row in rows:
                 row["origin"] = "db"
                 results.append(row)

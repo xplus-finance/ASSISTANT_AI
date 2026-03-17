@@ -34,6 +34,7 @@ class DesktopControlSkill(BaseSkill):
             "!teclado",
             "!ventanas", "!windows",
             "!tab", "!pestaña",
+            "!pestañas", "!tabs",  # listar/escanear todas las pestañas
             "!claude",
         ]
 
@@ -49,6 +50,8 @@ class DesktopControlSkill(BaseSkill):
             return await self._do_screenshot(desktop)
         elif original.startswith(("!ventanas", "!windows")):
             return await self._do_list_windows(desktop)
+        elif original.startswith(("!pestañas", "!tabs")):
+            return await self._do_scan_all_tabs(desktop)
         elif original.startswith(("!tab", "!pestaña")):
             return await self._do_tab(desktop, args)
         elif original.startswith("!teclado"):
@@ -125,6 +128,46 @@ class DesktopControlSkill(BaseSkill):
             return SkillResult(success=True, message=f"Texto escrito: {text[:100]}")
         except Exception as exc:
             return SkillResult(success=False, message=f"Error al escribir texto: {exc}")
+
+    async def _do_scan_all_tabs(self, desktop: Any) -> SkillResult:
+        """Scan ALL browser tabs — tries CDP first, falls back to visual scan."""
+        # Intento 1: Chrome DevTools Protocol (instantáneo, sin mover nada)
+        cdp_tabs = await desktop.list_browser_tabs_cdp()
+        if cdp_tabs:
+            lines = [f"Pestañas del navegador via CDP ({len(cdp_tabs)}):"]
+            for t in cdp_tabs:
+                lines.append(f"  [{t['index']+1}] {t['title']}")
+                if t.get("url") and not t["url"].startswith("chrome://"):
+                    lines.append(f"       {t['url']}")
+            return SkillResult(
+                success=True,
+                message="\n".join(lines),
+                data={"tabs": cdp_tabs, "method": "cdp"},
+            )
+
+        # Intento 2: iteración visual con Ctrl+Tab
+        try:
+            tabs = await desktop.scan_all_tabs(max_tabs=80)
+            if not tabs:
+                return SkillResult(
+                    success=False,
+                    message=(
+                        "No encontré pestañas. Asegúrate de que el navegador esté en foco.\n"
+                        "Para mejor resultado, activa CDP en Chrome:\n"
+                        "  chromium --remote-debugging-port=9222 &"
+                    ),
+                )
+            lines = [f"Pestañas escaneadas ({len(tabs)}):"]
+            for t in tabs:
+                lines.append(f"  [{t['index']+1}] {t['title']}")
+            lines.append("\n(Escaneado visual. Para más info activa CDP: chromium --remote-debugging-port=9222)")
+            return SkillResult(
+                success=True,
+                message="\n".join(lines),
+                data={"tabs": tabs, "method": "visual_scan"},
+            )
+        except Exception as exc:
+            return SkillResult(success=False, message=f"Error al escanear pestañas: {exc}")
 
     async def _do_claude(self, desktop: Any, args: str) -> SkillResult:
         """Send a message to the user's Claude Code instance in VS Code."""

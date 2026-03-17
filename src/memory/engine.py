@@ -239,6 +239,8 @@ class MemoryEngine:
             # apsw is NOT compiled with SQLCipher. We attempt the pragma
             # but gracefully skip if the extension is not available.
             try:
+                if "'" in self._encryption_key:
+                    raise ValueError("Encryption key contains invalid characters")
                 self._conn.execute(f"PRAGMA key = '{self._encryption_key}'")
                 log.info("memory_engine.encryption_enabled")
             except apsw.SQLError:

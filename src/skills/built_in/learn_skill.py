@@ -13,7 +13,8 @@ from urllib.parse import parse_qs, quote_plus, urlparse
 
 import structlog
 
-from src.memory.engine import MemoryEngine
+from src.learning.web_search import _is_safe_url
+from src.memory.engine import MemoryEngine, sanitize_fts_query
 from src.skills.base_skill import BaseSkill, SkillResult
 
 log = structlog.get_logger("assistant.skills.learn")
@@ -117,7 +118,8 @@ class LearnSkill(BaseSkill):
             exc_name = type(exc).__name__
             if "Timeout" in exc_name:
                 return SkillResult(success=False, message="Timeout buscando en la web.")
-            return SkillResult(success=False, message=f"Error HTTP: {exc}")
+            log.exception("learn_skill.http_error")
+            return SkillResult(success=False, message="Error al realizar la búsqueda web. Intenta de nuevo más tarde.")
 
         soup = BeautifulSoup(resp.text, "html.parser")
         results = self._parse_ddg_results(soup)
@@ -191,6 +193,9 @@ class LearnSkill(BaseSkill):
         if parsed.scheme not in ("http", "https"):
             return SkillResult(success=False, message=f"Esquema no soportado: {parsed.scheme}")
 
+        if not _is_safe_url(url):
+            return SkillResult(success=False, message="URL no permitida: apunta a una dirección interna o privada.")
+
         try:
             import httpx
             from bs4 import BeautifulSoup
@@ -211,8 +216,9 @@ class LearnSkill(BaseSkill):
         except Exception as exc:
             exc_name = type(exc).__name__
             if "Timeout" in exc_name:
-                return SkillResult(success=False, message=f"Timeout accediendo a {url}")
-            return SkillResult(success=False, message=f"Error HTTP: {exc}")
+                return SkillResult(success=False, message="Timeout accediendo a la URL.")
+            log.exception("learn_skill.http_error")
+            return SkillResult(success=False, message="Error al acceder a la URL. Verifica que sea válida y accesible.")
 
         content_type = resp.headers.get("content-type", "")
         if "text/html" not in content_type and "text/plain" not in content_type:
@@ -316,6 +322,13 @@ class LearnSkill(BaseSkill):
         if not query.strip():
             return SkillResult(success=False, message="Uso: !aprendido buscar <termino>")
 
+        safe_query = sanitize_fts_query(query.strip())
+        if not safe_query:
+            return SkillResult(
+                success=False,
+                message="La busqueda no contiene terminos validos.",
+            )
+
         rows = memory.fetchall_dicts(
             """
             SELECT k.id, k.topic, k.content, k.source_url
@@ -325,7 +338,7 @@ class LearnSkill(BaseSkill):
             ORDER BY rank
             LIMIT 5
             """,
-            (query.strip(),),
+            (safe_query,),
         )
 
         if not rows:
