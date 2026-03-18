@@ -37,6 +37,11 @@ class ContextBuilder:
         self._conversation = conversation
         self._learning = learning
         self._tasks = tasks
+        self._profile_cache: dict[str, str] | None = None
+
+    def invalidate_profile_cache(self) -> None:
+        """Call when user profile changes."""
+        self._profile_cache = None
 
     def build(self, current_message: str, session_id: str) -> ConversationContext:
         profile = self._load_user_profile()
@@ -65,22 +70,31 @@ class ContextBuilder:
         return ctx
 
     def _load_user_profile(self) -> dict[str, str]:
+        if self._profile_cache is not None:
+            return self._profile_cache
         rows = self._engine.fetchall("SELECT key, value FROM user_profile ORDER BY key")
-        return {row[0]: row[1] for row in rows}
+        self._profile_cache = {row[0]: row[1] for row in rows}
+        return self._profile_cache
 
     def _search_relevant_facts(self, message: str, limit: int = 10) -> list[dict[str, Any]]:
-        if len(message.strip()) < 3:
-            return []
+        stripped = message.strip()
+        if len(stripped) < 3:
+            # For very short messages, return most-used facts as general context
+            try:
+                return self._learning.get_most_used_facts(limit=5)
+            except Exception:
+                return []
         try:
-            return self._learning.search_facts(message, limit=limit)
+            return self._learning.search_facts(stripped, limit=limit)
         except Exception:
             return []
 
     def _search_relevant_knowledge(self, message: str, limit: int = 5) -> list[dict[str, Any]]:
-        if len(message.strip()) < 3:
+        stripped = message.strip()
+        if len(stripped) < 3:
             return []
         try:
-            return self._learning.search_knowledge(message, limit=limit)
+            return self._learning.search_knowledge(stripped, limit=limit)
         except Exception:
             return []
 
@@ -89,11 +103,12 @@ class ContextBuilder:
         return self._engine.fetchall_dicts(sql)
 
     def _load_cross_session_history(self, exclude_session: str, limit: int = 15) -> list[dict[str, Any]]:
-        """Load recent messages from previous sessions for continuity across restarts."""
+        """Load recent messages from previous sessions (last 48h) for continuity."""
         sql = """
             SELECT id, timestamp, role, message, message_type, audio_duration_secs, channel
             FROM conversations
             WHERE session_id != ?
+              AND timestamp >= datetime('now', '-48 hours')
             ORDER BY id DESC
             LIMIT ?
         """

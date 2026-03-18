@@ -6,6 +6,7 @@ Supports text, voice, image, and document messages.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import tempfile
@@ -108,23 +109,23 @@ class TelegramChannel(Channel):
         if self._app is None:
             raise RuntimeError("Telegram bot is not running.")
 
-        with open(audio_path, "rb") as audio_file:
-            await self._app.bot.send_voice(
-                chat_id=int(chat_id),
-                voice=audio_file,
-            )
+        audio_bytes = await asyncio.to_thread(Path(audio_path).read_bytes)
+        await self._app.bot.send_voice(
+            chat_id=int(chat_id),
+            voice=audio_bytes,
+        )
 
     async def send_photo(self, chat_id: str, photo_path: str, caption: str = "") -> None:
         """Send a photo to a chat."""
         if self._app is None:
             raise RuntimeError("Telegram bot is not running.")
 
-        with open(photo_path, "rb") as photo_file:
-            await self._app.bot.send_photo(
-                chat_id=int(chat_id),
-                photo=photo_file,
-                caption=caption or None,
-            )
+        photo_bytes = await asyncio.to_thread(Path(photo_path).read_bytes)
+        await self._app.bot.send_photo(
+            chat_id=int(chat_id),
+            photo=photo_bytes,
+            caption=caption or None,
+        )
 
     async def send_document(
         self, chat_id: str, path: str, caption: str = ""
@@ -133,12 +134,12 @@ class TelegramChannel(Channel):
         if self._app is None:
             raise RuntimeError("Telegram bot is not running.")
 
-        with open(path, "rb") as doc_file:
-            await self._app.bot.send_document(
-                chat_id=int(chat_id),
-                document=doc_file,
-                caption=caption or None,
-            )
+        doc_bytes = await asyncio.to_thread(Path(path).read_bytes)
+        await self._app.bot.send_document(
+            chat_id=int(chat_id),
+            document=doc_bytes,
+            caption=caption or None,
+        )
 
     async def send_typing(self, chat_id: str) -> None:
         """Send a typing indicator."""

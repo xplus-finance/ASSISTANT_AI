@@ -59,7 +59,7 @@ class ClaudeBridgeError(Exception):
 
 
 class ClaudeBridge:
-    def __init__(self, cli_path="claude", default_timeout=300):
+    def __init__(self, cli_path="claude", default_timeout=1200):
         self._cli = _resolve_claude_path(cli_path)
         self._default_timeout = default_timeout
         self._install_dir = str(pathlib.Path(__file__).resolve().parent.parent.parent)
@@ -122,7 +122,7 @@ class ClaudeBridge:
         """Send a message to the persistent session and get response."""
         timeout = timeout or self._default_timeout
         if complex_task:
-            timeout = max(timeout, 300)
+            timeout = max(timeout, 1200)
 
         async with self._lock:  # One request at a time
             try:
@@ -160,7 +160,7 @@ class ClaudeBridge:
             try:
                 raw = await asyncio.wait_for(
                     self._process.stdout.readline(),
-                    timeout=min(30, deadline - time.time())
+                    timeout=min(60, deadline - time.time())
                 )
             except asyncio.TimeoutError:
                 break
@@ -199,7 +199,7 @@ class ClaudeBridge:
 
     async def _oneshot(self, prompt, system_prompt, timeout, complex_task=False):
         """Fallback: one-shot claude -p call."""
-        max_turns = '50' if complex_task else '25'
+        max_turns = '200' if complex_task else '100'
         cmd = [
             self._cli, '-p', prompt,
             '--output-format', 'text',
@@ -228,12 +228,12 @@ class ClaudeBridge:
 
         return stdout.decode().strip()
 
-    async def execute_in_project(self, task, project_path, system_prompt="", timeout=300):
+    async def execute_in_project(self, task, project_path, system_prompt="", timeout=1200):
         """Execute task in specific project directory (uses one-shot with --add-dir)."""
         cmd = [
             self._cli, '-p', task,
             '--output-format', 'text',
-            '--max-turns', '50',
+            '--max-turns', '100',
             '--add-dir', project_path,
             '--permission-mode', 'bypassPermissions',
         ]

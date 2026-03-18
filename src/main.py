@@ -23,8 +23,8 @@ class Settings(BaseSettings):
     security_pin: str = ""
 
     claude_cli_path: str = "claude"
-    claude_max_turns: int = 10
-    claude_timeout: int = 120
+    claude_max_turns: int = 20
+    claude_timeout: int = 480
 
     projects_base_dir: str = str(Path.home()) if IS_WINDOWS else "/home"
     data_dir: str = "data"

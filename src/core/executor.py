@@ -73,7 +73,7 @@ class SandboxedExecutor:
         self,
         command: str,
         workspace: str = TEMP_DIR,
-        timeout: int = 30,
+        timeout: int = 120,
         allow_network: bool = False,
     ) -> ExecutionResult:
         ws_path = Path(workspace)

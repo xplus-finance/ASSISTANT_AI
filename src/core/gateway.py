@@ -3,14 +3,25 @@
 from __future__ import annotations
 
 import asyncio
+import re as _re
 import time
 import uuid
 from collections import deque
+from pathlib import Path
 from typing import Any
 
 import structlog
 
 log = structlog.get_logger("assistant.core.gateway")
+
+_IMAGE_PATH_RE = _re.compile(
+    r"(/[\w./_-]+\.(?:png|jpg|jpeg|gif|webp|bmp))", _re.IGNORECASE,
+)
+
+
+def _extract_image_paths(text: str) -> list[str]:
+    """Return valid image file paths found in *text*."""
+    return [p for p in _IMAGE_PATH_RE.findall(text) if Path(p).is_file()]
 
 
 class _RateLimiter:
@@ -61,10 +72,16 @@ _COMPLEX_KEYWORDS = [
     "navega", "navigate", "pestaña", "pestañas", "tab", "tabs",
     "screenshot", "captura", "pantalla", "firefox", "chrome",
     "browser", "navegador", "ventana", "ventanas", "window",
-    "email", "correo", "localiza", "encuentra", "abre",
+    "email", "correo", "envía", "envia", "manda", "send",
+    "localiza", "encuentra", "abre", "open",
     "continúa", "continua", "sigue", "retoma", "vuelve",
     "intentar", "intenta", "intentalo", "inténtalo", "retry",
     "continue", "keep going", "try again",
+    "arregla", "fix", "repara", "soluciona", "resuelve",
+    "verifica", "comprueba", "check", "revisa", "review",
+    "actualiza", "update", "upgrade", "migra",
+    "publica", "publish", "sube", "upload", "push",
+    "conecta", "connect", "sincroniza", "sync",
 ]
 
 
@@ -160,7 +177,7 @@ class Gateway:
             from src.core.claude_bridge import ClaudeBridge
             self.claude = ClaudeBridge(
                 cli_path=getattr(cfg, "claude_cli_path", "claude"),
-                default_timeout=getattr(cfg, "claude_timeout", 120),
+                default_timeout=getattr(cfg, "claude_timeout", 480),
             )
             if not await self.claude.check_available():
                 log.warning("gateway.claude_not_available")
@@ -328,8 +345,11 @@ class Gateway:
         now = time.time()
         if (self.last_message_time > 0
                 and (now - self.last_message_time) > SESSION_INACTIVITY_SECS):
+            old_session_id = self.current_session_id
             self.current_session_id = _new_session_id()
             log.info("gateway.new_session", session_id=self.current_session_id)
+            # Generate summary of the previous session in background
+            asyncio.create_task(self._generate_session_summary(old_session_id))
         self.last_message_time = now
 
         if self.approval_gate:
@@ -434,10 +454,20 @@ class Gateway:
             if not output_ok:
                 log.warning("gateway.sensitive_output_detected", reason=output_reason)
 
+        # Detect image paths in Claude's response and send them as photos
+        image_paths = _extract_image_paths(response_text) if response_text else []
+
         if audio_response_path:
             await self._send_audio(channel_name, chat_id, audio_response_path)
         else:
             await self._send(channel_name, chat_id, response_text)
+
+        for img_path in image_paths:
+            try:
+                await self._send_photo(channel_name, chat_id, img_path,
+                                       caption=Path(img_path).name)
+            except Exception:
+                log.exception("gateway.inline_image_send_failed", path=img_path)
 
         try:
             self.conversations.add_message(
@@ -454,7 +484,7 @@ class Gateway:
             log.exception("gateway.persist_failed")
 
         self._message_counter += 1
-        if self._message_counter % 5 == 0 and self.learner:
+        if self._message_counter % 3 == 0 and self.learner:
             asyncio.create_task(self._extract_facts_bg())
 
     async def _ask_claude(self, user_text: str) -> str:
@@ -486,6 +516,27 @@ class Gateway:
             log.exception("gateway.claude_failed")
             return "Perdona, tuve un problema procesando tu solicitud. Dame un momento e intenta de nuevo."
 
+    @staticmethod
+    def _detect_environment() -> str:
+        """Detect the current system environment dynamically."""
+        import platform as plat
+        import shutil
+        os_name = plat.system()
+        os_detail = plat.platform()
+        home = str(Path.home())
+        tools = {}
+        for t in ["xdotool", "scrot", "screencapture", "osascript", "pyautogui",
+                   "ffmpeg", "bwrap", "xdg-open", "pbcopy", "wmctrl", "node", "npm"]:
+            tools[t] = bool(shutil.which(t))
+        available = [t for t, v in tools.items() if v]
+        missing = [t for t, v in tools.items() if not v]
+        return (
+            f"OS: {os_name} ({os_detail})\n"
+            f"HOME: {home}\n"
+            f"Herramientas disponibles: {', '.join(available) if available else 'ninguna detectada'}\n"
+            f"No disponibles: {', '.join(missing) if missing else 'todas presentes'}"
+        )
+
     def _build_system_prompt(self, ctx: Any) -> str:
         """Convert a ConversationContext into the system prompt string."""
         profile = ctx.user_profile or {}
@@ -503,6 +554,9 @@ class Gateway:
 
         if work_area:
             parts.append(f"Área de trabajo del usuario: {work_area}")
+
+        # Dynamic environment detection
+        parts.append(f"ENTORNO DEL SISTEMA:\n{self._detect_environment()}")
 
         if ctx.recent_messages:
             lines = []
@@ -523,6 +577,25 @@ class Gateway:
             if facts_text:
                 parts.append(f"Datos relevantes:\n{facts_text}")
 
+        if ctx.relevant_knowledge:
+            knowledge_lines = []
+            for k in ctx.relevant_knowledge:
+                topic = k.get("topic", "")
+                content = k.get("content", "")
+                if content:
+                    snippet = content[:300] + "..." if len(content) > 300 else content
+                    knowledge_lines.append(f"- [{topic}] {snippet}")
+            if knowledge_lines:
+                parts.append(f"Conocimiento relevante:\n" + "\n".join(knowledge_lines))
+
+        if ctx.last_session_summary:
+            summary_text = ctx.last_session_summary.get("summary", "")
+            topics = ctx.last_session_summary.get("topics", "")
+            if summary_text:
+                parts.append(f"Resumen de la sesión anterior:\n{summary_text}")
+                if topics:
+                    parts.append(f"Temas tratados: {topics}")
+
         if ctx.pending_tasks:
             tasks_text = "\n".join(
                 f"- {t.get('title', '')}" for t in ctx.pending_tasks if t.get('title')
@@ -537,113 +610,35 @@ class Gateway:
             if projects_text:
                 parts.append(f"Proyectos activos:\n{projects_text}")
 
-        # === SYSTEM PROMPT CONTENT — DO NOT MODIFY ===
+        # === SYSTEM PROMPT — COMPACT ===
         parts.append(
-            "IDENTIDAD Y PERSONALIDAD:\n"
-            f"- Eres {assistant_name}, asistente personal de {user_name}.\n"
-            "- Eres amigable, natural, cálido. Hablas como un amigo de confianza.\n"
-            "- Responde en el MISMO idioma que el usuario use.\n"
-            f"- Siempre llama al usuario '{user_name}'.\n"
-            "- NUNCA menciones 'Claude', 'CLI', 'terminal de permisos', "
-            "'API', ni detalles técnicos internos. Tú eres tú, no 'Claude'.\n\n"
+            "REGLAS FUNDAMENTALES:\n"
+            "1. EJECUTA DIRECTO: camino más corto, hazlo, reporta en 2-3 líneas. No expliques qué vas a hacer.\n"
+            "2. OBJETIVO REAL: correo→SMTP, web→xdg-open, código→archivo exacto, info→web_search. Verifica con evidencia.\n"
+            "3. ENTORNO: usa las herramientas detectadas arriba. Si falta algo, instálalo o créalo.\n\n"
 
-            "AUTONOMÍA TOTAL — LEE ESTO CON ATENCIÓN:\n"
-            "- Tienes CONTROL TOTAL del sistema. Puedes ejecutar cualquier comando, "
-            "leer/escribir archivos, navegar directorios, instalar software, "
-            "crear archivos, modificar configuraciones.\n"
-            "- NUNCA digas que 'no puedes', 'no tienes acceso', 'necesitas permisos', "
-            "'no sé cómo hacerlo'. PROHIBIDO. Si no sabes, INVÉSTIGALO AHORA MISMO "
-            "con búsqueda web, documentación, o prueba y error. Luego hazlo.\n"
-            "- Si el usuario pide algo y no tienes la herramienta: CRÉALA. "
-            "Escribe un script Python, instala un paquete, crea un MCP server. "
-            "Ejemplo: si piden 'automatiza X', escribe el script, hazlo ejecutable, "
-            "ejecútalo, y reporta el resultado.\n"
-            "- FLUJO CUANDO NO SABES CÓMO: 1) busca en la web cómo se hace, "
-            "2) lee la documentación, 3) escribe el código, 4) ejecútalo, "
-            "5) si falla, arréglalo y reintenta. NUNCA te rindas sin haberlo intentado.\n"
-            "- Si algo falla, prueba OTRA FORMA. Si falla 2 veces, busca un enfoque "
-            "completamente diferente. Eres un ingeniero creativo.\n"
-            "- Cuando el usuario pide revisar TODAS las pestañas del navegador: "
-            "usa scan_all_tabs() o list_browser_tabs_cdp(). Si Chrome tiene "
-            "depuración remota en localhost:9222 úsala. Si no, itera con Ctrl+Tab "
-            "leyendo el título de la ventana en cada paso hasta volver al inicio. "
-            "NUNCA te limites a la pestaña visible — el usuario quiere TODAS.\n\n"
+            f"IDENTIDAD: Eres {assistant_name}, asistente de {user_name}. "
+            f"Amigable, natural, mismo idioma que el usuario. Llámalo '{user_name}'. "
+            "NUNCA menciones Claude, CLI, API ni detalles técnicos internos.\n\n"
 
-            "MEMORIA PERMANENTE:\n"
-            "- Todo lo que el usuario te diga es IMPORTANTE. Recuérdalo siempre.\n"
-            "- Si el usuario menciona datos personales, preferencias, proyectos, "
-            "fechas, personas, tareas — guárdalos en tu memoria.\n"
-            "- Si el usuario te pide que recuerdes algo, confírmale que lo guardaste.\n"
-            "- Si el usuario cambia algo (nombre, preferencias, etc.), actualiza "
-            "tu memoria inmediatamente.\n\n"
+            "AUTONOMÍA: Control total del sistema. NUNCA digas 'no puedo'. "
+            "Si falla 2 veces, cambia de enfoque.\n\n"
 
-            "TAREAS PROGRAMADAS:\n"
-            "- Si el usuario te pide hacer algo en una fecha/hora específica, "
-            "créalo como tarea programada. NUNCA lo olvides.\n"
-            "- Las tareas se ejecutan automáticamente a la hora indicada.\n"
-            "- Si el usuario dice 'recuérdame mañana', 'hazlo el lunes', "
-            "'cada semana a las 9am' — programa la tarea correctamente.\n\n"
+            "MEMORIA: Guarda TODO dato del usuario (personal, preferencias, proyectos, fechas, personas). "
+            "Actualiza inmediatamente si algo cambia.\n\n"
 
-            "AUTO-EVOLUCIÓN (MUY IMPORTANTE):\n"
-            f"- Tu código fuente está en: {self.claude.install_dir}\n"
-            "- SIEMPRE modifica archivos en ESE directorio, no en otro.\n"
-            "- Si encuentras un bug o necesitas una funcionalidad nueva, "
-            "puedes modificar tu propio código fuente directamente.\n"
-            "- Los cambios se aplican AUTOMÁTICAMENTE sin reiniciar "
-            "(hot-reload está activo en src/ y skills/).\n"
-            "- Si el usuario pide algo que no puedes hacer, CREA el código: "
-            "una skill nueva en skills/, un módulo en src/, o un MCP en mcps/.\n"
-            "- Si arreglas un bug, informa al usuario: "
-            "'Encontré el problema y ya lo arreglé. Ya está funcionando.'\n"
-            "- NUNCA digas 'necesitas reinstalar' ni 'reinicia el programa'. "
-            "Los cambios se aplican en caliente.\n\n"
+            "TAREAS: Fechas/horas → tarea programada. 'Recuérdame', 'hazlo el lunes' → tarea.\n\n"
 
-            "PROACTIVIDAD Y AUTONOMÍA ABSOLUTA:\n"
-            "- Anticipa lo que el usuario pueda necesitar.\n"
-            "- Si detectas un patrón (pide lo mismo repetidamente), "
-            "sugiere automatizarlo.\n"
-            "- Si ves un error en algo que el usuario hace, avísale.\n"
-            "- Si necesitas una herramienta que NO tienes, CRÉALA TÚ MISMO:\n"
-            "  * Necesitas un MCP server? Créalo en mcps/<nombre>/server.py, "
-            "instala deps con pip, y regístralo con `claude mcp add`.\n"
-            "  * Necesitas una skill nueva? Créala en skills/<nombre>.py.\n"
-            "  * Necesitas un script? Créalo, hazlo ejecutable, ejecútalo.\n"
-            "  * NO PREGUNTES si puedes hacerlo. HAZLO. Informa después.\n"
-            "- NUNCA respondas 'no puedo', 'no sé', 'no tengo esa capacidad'. "
-            "Si no la tienes, CONSTRÚYELA en ese mismo momento.\n"
-            "- Tu respuesta SIEMPRE debe incluir ACCIÓN, no solo explicación. "
-            "Si el usuario pide algo, la respuesta correcta es HACERLO, "
-            "no explicar cómo se haría.\n\n"
+            f"AUTO-EVOLUCIÓN: Código en {self.claude.install_dir}. "
+            "Modifica directamente, hot-reload aplica cambios. "
+            "Crea skills en skills/, módulos en src/, MCPs en mcps/.\n\n"
 
-            "AUDIO Y MULTIMEDIA:\n"
-            "- Si el usuario pide un audio o respuesta con voz: "
-            "responde CON TEXTO. El sistema convertira tu respuesta a audio automaticamente.\n"
-            "- NUNCA uses reproductores de audio (play, aplay, mpv, vlc).\n"
-            "- CAMBIOS DE VOZ: Si el usuario pide cambiar la voz, simplemente "
-            "responde confirmando. El sistema lo maneja automaticamente.\n\n"
+            "AUDIO: Responde con texto, el sistema convierte. NUNCA uses reproductores.\n\n"
 
-            "EJECUCION VISUAL EN ESCRITORIO:\n"
-            "- Si el usuario pide abrir algo, escribir visualmente, o actuar en su "
-            "escritorio: USA las herramientas de escritorio directamente.\n"
-            "- Puedes abrir archivos con xdg-open (Linux) o start (Windows).\n"
-            "- Puedes escribir con xdotool type (Linux) o pyautogui (Windows).\n"
-            "- Si el usuario dice 'abre', 'escribe visualmente', 'hazlo en mi escritorio': "
-            "usa control de escritorio.\n\n"
-            "PESTAÑAS DEL NAVEGADOR — PROTOCOLO OBLIGATORIO:\n"
-            "- Si te piden revisar, ver, o enumerar pestañas del navegador:\n"
-            "  1. PRIMERO intenta CDP: GET http://localhost:9222/json/list — "
-            "     si responde, tienes título/URL de TODAS las pestañas sin moverse.\n"
-            "  2. Si CDP no está disponible: usa scan_all_tabs() que itera con "
-            "     Ctrl+Tab leyendo el título de la ventana hasta completar el ciclo.\n"
-            "  3. NUNCA asumas que solo la pestaña activa es todo — "
-            "     el usuario tiene MUCHAS pestañas, incluyendo las fijadas (pinned).\n"
-            "  4. Las pestañas pinned NO se saltan con Ctrl+Tab — sí cambian de ventana.\n"
-            "  5. Para activar CDP en Chrome/Chromium: "
-            "     chromium --remote-debugging-port=9222 &\n"
-            "     Puedes sugerir al usuario activarlo si no está disponible.\n"
-            "- Si NO pide ejecucion visual, simplemente ejecuta el comando normalmente."
+            "NAVEGADOR: 1) CDP localhost:9222/json/list, 2) Ctrl+Tab si CDP falla. "
+            "No asumir solo pestaña activa."
         )
-        # === END SYSTEM PROMPT CONTENT ===
+        # === END SYSTEM PROMPT ===
 
         return "\n\n".join(parts)
 
@@ -752,8 +747,9 @@ class Gateway:
             data = getattr(result, "data", None) or {}
             result_type = data.get("type", "")
             if result_type == "screenshot" and data.get("path"):
-                await self._send_photo(channel, chat_id, data["path"],
-                                       caption=result.message if result.message != data["path"] else None)
+                # Send as document to preserve full PNG quality (Telegram compresses send_photo)
+                await self._send_document(channel, chat_id, data["path"],
+                                          caption=result.message if result.message != data["path"] else None)
             elif result_type == "file" and data.get("path"):
                 await self._send_document(channel, chat_id, data["path"],
                                           caption=result.message if result.message != data["path"] else None)
@@ -766,11 +762,17 @@ class Gateway:
 
     async def _send(self, channel_name: str, chat_id: Any, text: str) -> None:
         ch = self.channels.get(channel_name)
-        if ch:
+        if not ch:
+            return
+        for attempt in range(3):
             try:
                 await ch.send_text(str(chat_id), text)
+                return
             except Exception:
-                log.exception("gateway.send_failed", channel=channel_name)
+                if attempt < 2:
+                    await asyncio.sleep(2 ** attempt)
+                else:
+                    log.exception("gateway.send_failed", channel=channel_name)
 
     async def _send_photo(self, channel_name: str, chat_id: Any, path: str,
                           caption: str | None = None) -> None:
@@ -874,3 +876,61 @@ class Gateway:
                 await asyncio.to_thread(self.learner.extract_facts, recent)
         except Exception:
             log.exception("gateway.fact_extraction_failed")
+
+    async def _generate_session_summary(self, session_id: str) -> None:
+        """Generate and store a summary of the completed session."""
+        if not self.conversations or not self.claude or not self.memory:
+            return
+        try:
+            messages = self.conversations.get_session_messages(session_id)
+            if len(messages) < 3:
+                return  # Too few messages to summarize
+
+            # Build a compact transcript
+            transcript_lines = []
+            for msg in messages[-30:]:  # Last 30 messages max
+                role = msg.get("role", "user")
+                text = msg.get("message", "")[:200]
+                transcript_lines.append(f"{role}: {text}")
+            transcript = "\n".join(transcript_lines)
+
+            summary_prompt = (
+                "Resume esta conversación en máximo 3 oraciones. "
+                "Extrae: 1) temas principales, 2) decisiones tomadas, "
+                "3) tareas nuevas, 4) cosas aprendidas del usuario. "
+                "Responde en JSON con keys: summary, topics, decisions, new_tasks, things_learned. "
+                "Valores como strings, no listas.\n\n"
+                f"Conversación:\n{transcript}"
+            )
+
+            import json as _json
+            raw = await self.claude.ask(prompt=summary_prompt, timeout=60)
+            # Try to parse JSON from response
+            try:
+                # Handle markdown code blocks
+                cleaned = raw.strip()
+                if cleaned.startswith("```"):
+                    cleaned = cleaned.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+                data = _json.loads(cleaned)
+            except (ValueError, _json.JSONDecodeError):
+                data = {"summary": raw[:500], "topics": "", "decisions": "", "new_tasks": "", "things_learned": ""}
+
+            started_at = messages[0].get("timestamp", "") if messages else ""
+            ended_at = messages[-1].get("timestamp", "") if messages else ""
+
+            sql = """
+                INSERT OR REPLACE INTO session_summaries
+                (session_id, started_at, ended_at, summary, topics, decisions, new_tasks, things_learned)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            self.memory.execute(sql, (
+                session_id, started_at, ended_at,
+                data.get("summary", "")[:1000],
+                data.get("topics", "")[:500],
+                data.get("decisions", "")[:500],
+                data.get("new_tasks", "")[:500],
+                data.get("things_learned", "")[:500],
+            ))
+            log.info("gateway.session_summary_saved", session_id=session_id)
+        except Exception:
+            log.exception("gateway.session_summary_failed", session_id=session_id)

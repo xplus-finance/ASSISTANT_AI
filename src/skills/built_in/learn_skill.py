@@ -107,7 +107,7 @@ class LearnSkill(BaseSkill):
 
         try:
             async with httpx.AsyncClient(
-                timeout=15,
+                timeout=30,
                 headers={"User-Agent": _USER_AGENT},
                 follow_redirects=True,
             ) as client:
@@ -207,7 +207,7 @@ class LearnSkill(BaseSkill):
 
         try:
             async with httpx.AsyncClient(
-                timeout=20,
+                timeout=40,
                 headers={"User-Agent": _USER_AGENT},
                 follow_redirects=True,
             ) as client:

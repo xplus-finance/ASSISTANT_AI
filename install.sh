@@ -889,34 +889,66 @@ echo -e "  • Funciona en segundo plano sin que tengas que hacer nada"
 echo ""
 
 if confirm "¿Activar inicio automático?"; then
-    SERVICE_FILE="$PROJECT_DIR/systemd/ai-assistant.service"
 
-    if [[ ! -f "$SERVICE_FILE" ]]; then
-        warn "Archivo de servicio no encontrado: $SERVICE_FILE"
-        echo -e "  ${DIM}Puedes configurarlo manualmente después.${NC}"
+    if [[ "$(uname)" == "Darwin" ]]; then
+        # ---- macOS: launchd LaunchAgent ----
+        PLIST_SRC="$PROJECT_DIR/launchd/com.personal-ai-assistant.plist"
+
+        if [[ ! -f "$PLIST_SRC" ]]; then
+            warn "Archivo plist no encontrado: $PLIST_SRC"
+            echo -e "  ${DIM}Puedes configurarlo manualmente después.${NC}"
+        else
+            working "Configurando LaunchAgent para macOS..."
+
+            PLIST_DEST="$HOME/Library/LaunchAgents/com.personal-ai-assistant.plist"
+            mkdir -p "$HOME/Library/LaunchAgents"
+
+            # Generar plist con rutas correctas
+            sed "s|/opt/ai-assistant|$PROJECT_DIR|g" "$PLIST_SRC" > "$PLIST_DEST"
+
+            # Cargar el agente (lo activa ahora y al próximo login)
+            launchctl unload "$PLIST_DEST" 2>/dev/null || true
+            launchctl load -w "$PLIST_DEST"
+
+            info "LaunchAgent instalado y activado."
+            echo ""
+            echo -e "  ${BOLD}Comandos útiles:${NC}"
+            echo -e "    ${CYAN}launchctl start com.personal-ai-assistant${NC}   ← Iniciar"
+            echo -e "    ${CYAN}launchctl stop com.personal-ai-assistant${NC}    ← Detener"
+            echo -e "    ${CYAN}launchctl unload ~/Library/LaunchAgents/com.personal-ai-assistant.plist${NC} ← Desactivar"
+            echo -e "    ${CYAN}tail -f $PROJECT_DIR/logs/launchd-stdout.log${NC} ← Ver logs"
+        fi
     else
-        working "Configurando servicio systemd..."
+        # ---- Linux: systemd service ----
+        SERVICE_FILE="$PROJECT_DIR/systemd/ai-assistant.service"
 
-        TEMP_SERVICE="/tmp/ai-assistant.service"
-        sed "s|/opt/ai-assistant|$PROJECT_DIR|g" "$SERVICE_FILE" > "$TEMP_SERVICE"
+        if [[ ! -f "$SERVICE_FILE" ]]; then
+            warn "Archivo de servicio no encontrado: $SERVICE_FILE"
+            echo -e "  ${DIM}Puedes configurarlo manualmente después.${NC}"
+        else
+            working "Configurando servicio systemd..."
 
-        CURRENT_USER=$(whoami)
-        CURRENT_GROUP=$(id -gn)
-        _sed_i "s|^User=.*|User=$CURRENT_USER|" "$TEMP_SERVICE"
-        _sed_i "s|^Group=.*|Group=$CURRENT_GROUP|" "$TEMP_SERVICE"
-        _sed_i "s|^ExecStart=.*|ExecStart=$PROJECT_DIR/.venv/bin/python -m src.main|" "$TEMP_SERVICE"
+            TEMP_SERVICE="/tmp/ai-assistant.service"
+            sed "s|/opt/ai-assistant|$PROJECT_DIR|g" "$SERVICE_FILE" > "$TEMP_SERVICE"
 
-        sudo cp "$TEMP_SERVICE" /etc/systemd/system/ai-assistant.service
-        sudo systemctl daemon-reload
-        sudo systemctl enable ai-assistant
-        info "Servicio instalado y habilitado."
-        echo ""
-        echo -e "  ${BOLD}Comandos útiles:${NC}"
-        echo -e "    ${CYAN}sudo systemctl start ai-assistant${NC}    ← Iniciar"
-        echo -e "    ${CYAN}sudo systemctl stop ai-assistant${NC}     ← Detener"
-        echo -e "    ${CYAN}sudo systemctl restart ai-assistant${NC}  ← Reiniciar"
-        echo -e "    ${CYAN}sudo systemctl status ai-assistant${NC}   ← Ver estado"
-        echo -e "    ${CYAN}journalctl -u ai-assistant -f${NC}        ← Ver logs en vivo"
+            CURRENT_USER=$(whoami)
+            CURRENT_GROUP=$(id -gn)
+            _sed_i "s|^User=.*|User=$CURRENT_USER|" "$TEMP_SERVICE"
+            _sed_i "s|^Group=.*|Group=$CURRENT_GROUP|" "$TEMP_SERVICE"
+            _sed_i "s|^ExecStart=.*|ExecStart=$PROJECT_DIR/.venv/bin/python -m src.main|" "$TEMP_SERVICE"
+
+            sudo cp "$TEMP_SERVICE" /etc/systemd/system/ai-assistant.service
+            sudo systemctl daemon-reload
+            sudo systemctl enable ai-assistant
+            info "Servicio instalado y habilitado."
+            echo ""
+            echo -e "  ${BOLD}Comandos útiles:${NC}"
+            echo -e "    ${CYAN}sudo systemctl start ai-assistant${NC}    ← Iniciar"
+            echo -e "    ${CYAN}sudo systemctl stop ai-assistant${NC}     ← Detener"
+            echo -e "    ${CYAN}sudo systemctl restart ai-assistant${NC}  ← Reiniciar"
+            echo -e "    ${CYAN}sudo systemctl status ai-assistant${NC}   ← Ver estado"
+            echo -e "    ${CYAN}journalctl -u ai-assistant -f${NC}        ← Ver logs en vivo"
+        fi
     fi
 else
     info "Inicio automático omitido. Puedes configurarlo después."

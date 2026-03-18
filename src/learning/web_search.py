@@ -34,8 +34,8 @@ _DEFAULT_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9,es;q=0.8",
 }
 
-_FETCH_TIMEOUT = 15.0  # seconds
-_SEARCH_TIMEOUT = 10.0
+_FETCH_TIMEOUT = 30.0  # seconds
+_SEARCH_TIMEOUT = 20.0
 
 
 def _is_safe_url(url: str) -> bool:

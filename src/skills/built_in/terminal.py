@@ -220,14 +220,14 @@ class TerminalSkill(BaseSkill):
             try:
                 stdout_bytes, stderr_bytes = await asyncio.wait_for(
                     process.communicate(),
-                    timeout=60,
+                    timeout=120,
                 )
             except asyncio.TimeoutError:
                 process.kill()
                 await process.wait()
                 return SkillResult(
                     success=False,
-                    message="Comando cancelado: excedio el tiempo limite de 60s.",
+                    message="Comando cancelado: excedio el tiempo limite de 120s.",
                 )
 
             stdout = stdout_bytes.decode("utf-8", errors="replace").strip()

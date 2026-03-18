@@ -135,7 +135,7 @@ class MCPCreatorSkill(BaseSkill):
                     "You are an expert MCP server developer. "
                     "Return ONLY the code blocks as requested, no extra text."
                 ),
-                timeout=90,
+                timeout=180,
             )
 
             # Parse response — extract python and requirements blocks
@@ -205,7 +205,7 @@ class MCPCreatorSkill(BaseSkill):
                 result = await asyncio.to_thread(
                     subprocess.run,
                     [python, "-m", "venv", str(venv_dir)],
-                    capture_output=True, text=True, timeout=60,
+                    capture_output=True, text=True, timeout=120,
                 )
                 if result.returncode == 0:
                     steps.append("Entorno virtual creado")
@@ -220,7 +220,7 @@ class MCPCreatorSkill(BaseSkill):
                 result = await asyncio.to_thread(
                     subprocess.run,
                     [pip, "install", "-r", str(req_path), "--quiet"],
-                    capture_output=True, text=True, timeout=120,
+                    capture_output=True, text=True, timeout=240,
                 )
                 if result.returncode == 0:
                     steps.append("Dependencias instaladas")
@@ -242,7 +242,7 @@ class MCPCreatorSkill(BaseSkill):
             result = await asyncio.to_thread(
                 subprocess.run,
                 register_cmd,
-                capture_output=True, text=True, timeout=30,
+                capture_output=True, text=True, timeout=60,
             )
             if result.returncode == 0:
                 steps.append(f"Registrado como MCP server '{name}' en Claude")

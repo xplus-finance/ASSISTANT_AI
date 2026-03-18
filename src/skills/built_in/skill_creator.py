@@ -143,7 +143,7 @@ class SkillCreatorSkill(BaseSkill):
                     "Eres un generador de codigo Python. Genera SOLO codigo "
                     "Python valido, sin bloques markdown ni explicaciones."
                 ),
-                timeout=60,
+                timeout=120,
             )
         except ClaudeBridgeError as exc:
             log.error("skill_creator.generation_error", error=str(exc))

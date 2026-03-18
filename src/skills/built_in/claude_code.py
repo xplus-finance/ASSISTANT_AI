@@ -146,7 +146,7 @@ class ClaudeCodeSkill(BaseSkill):
                     "Eres un asistente de desarrollo. Analiza el codigo y "
                     "responde en espanol. Se conciso y preciso."
                 ),
-                timeout=300,
+                timeout=600,
             )
 
             return SkillResult(
@@ -191,7 +191,7 @@ class ClaudeCodeSkill(BaseSkill):
                 task=task,
                 project_path=str(resolved),
                 system_prompt="Responde en espanol. Se conciso.",
-                timeout=180,
+                timeout=360,
             )
 
             return SkillResult(
