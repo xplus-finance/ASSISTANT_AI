@@ -37,14 +37,23 @@ CONTENIDO:
 """
 
 _EXTRACT_FACTS_PROMPT = """\
-Analiza los siguientes mensajes de una conversacion y extrae hechos sobre \
-el usuario. Devuelve SOLO un JSON array donde cada elemento tiene:
-- "category": una de "user", "project", "preference", "technical", "world"
-- "fact": el hecho extraido (una oracion clara)
-- "confidence": float entre 0.0 y 1.0
+Analiza estos mensajes y extrae DOS tipos de información:
 
-Si no hay hechos claros, devuelve un array vacio [].
-No inventes informacion — solo extrae lo que se deduce claramente.
+1. HECHOS sobre el usuario (datos personales, preferencias, proyectos, contactos)
+2. PROCEDIMIENTOS APRENDIDOS (qué funcionó, qué falló, trucos descubiertos)
+
+Devuelve SOLO un JSON array. Cada elemento:
+- "category": "user" | "project" | "preference" | "technical" | "world" | "procedure"
+- "fact": el hecho o procedimiento (una oración clara y útil)
+- "confidence": float 0.0-1.0
+
+Para procedimientos (category="procedure"), incluye QUÉ SE HIZO y POR QUÉ FUNCIONÓ.
+Ejemplo: "Para componer email en Gmail usar atajo 'c' + Tab entre campos, NO mouse"
+Ejemplo: "Monitor derecho del usuario tiene offset +1920 en xrandr"
+Ejemplo: "El usuario tiene ~30 pestañas en Firefox, CDP no está activo"
+
+Si no hay hechos claros, devuelve [].
+No inventes — solo extrae lo que se deduce de la conversación.
 
 MENSAJES:
 {messages}
@@ -129,7 +138,7 @@ class Learner:
         else:
             prompt = _SUMMARISE_PROMPT.format(topic=topic, content=combined)
             try:
-                summary = await asyncio.to_thread(self._claude.ask, prompt)
+                summary = await self._claude.ask(prompt, timeout=60)
             except Exception:
                 log.exception("learner.claude_summarise_failed", topic=topic)
                 summary = f"Recopile informacion sobre {topic} pero no pude resumirla."
@@ -182,7 +191,7 @@ class Learner:
         prompt = _EXTRACT_FACTS_PROMPT.format(messages=formatted)
 
         try:
-            raw_response = await asyncio.to_thread(self._claude.ask, prompt)
+            raw_response = await self._claude.ask(prompt, timeout=60)
         except Exception:
             log.exception("learner.fact_extraction_claude_failed")
             return []

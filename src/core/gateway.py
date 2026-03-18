@@ -397,6 +397,7 @@ class Gateway:
             log.info("gateway.new_session", session_id=self.current_session_id)
             # Generate summary of the previous session in background
             asyncio.create_task(self._generate_session_summary(old_session_id))
+            asyncio.create_task(self._extract_facts_for_session(old_session_id))
         self.last_message_time = now
 
         if self.approval_gate:
@@ -591,21 +592,47 @@ class Gateway:
         """Detect the current system environment dynamically."""
         import platform as plat
         import shutil
+        import subprocess as _sp
         os_name = plat.system()
         os_detail = plat.platform()
         home = str(Path.home())
         tools = {}
         for t in ["xdotool", "scrot", "screencapture", "osascript", "pyautogui",
-                   "ffmpeg", "bwrap", "xdg-open", "pbcopy", "wmctrl", "node", "npm"]:
+                   "ffmpeg", "bwrap", "xdg-open", "pbcopy", "wmctrl", "node", "npm",
+                   "xrandr", "xdpyinfo"]:
             tools[t] = bool(shutil.which(t))
         available = [t for t, v in tools.items() if v]
         missing = [t for t, v in tools.items() if not v]
-        return (
+
+        # Detect monitors layout
+        monitors = ""
+        if shutil.which("xrandr"):
+            try:
+                out = _sp.run(["xrandr", "--query"], capture_output=True, text=True, timeout=5)
+                lines = [l for l in out.stdout.splitlines() if " connected " in l]
+                monitor_info = []
+                for line in lines:
+                    parts = line.split()
+                    name = parts[0]
+                    # Find resolution+position like "1920x1080+0+0" or "1920x1080+1920+0"
+                    for p in parts:
+                        if "x" in p and "+" in p:
+                            monitor_info.append(f"{name}: {p}")
+                            break
+                if monitor_info:
+                    monitors = "Monitores: " + " | ".join(monitor_info)
+            except Exception:
+                pass
+
+        result = (
             f"OS: {os_name} ({os_detail})\n"
             f"HOME: {home}\n"
             f"Herramientas disponibles: {', '.join(available) if available else 'ninguna detectada'}\n"
             f"No disponibles: {', '.join(missing) if missing else 'todas presentes'}"
         )
+        if monitors:
+            result += f"\n{monitors}"
+        return result
 
     def _build_system_prompt(self, ctx: Any) -> str:
         """Convert a ConversationContext into the system prompt string."""
@@ -695,10 +722,23 @@ class Gateway:
             "Si falla 2 veces, cambia de enfoque.\n\n"
 
             "CONTROL VISUAL — REGLA DE ORO: MIRAR → ACTUAR → VERIFICAR\n"
-            "NUNCA hagas clic ni escribas sin ANTES tomar y leer un screenshot.\n"
+            "NUNCA hagas clic ni escribas sin ANTES tomar y leer un screenshot.\n\n"
+            "MULTI-MONITOR (LEE ESTO SI HAY MÁS DE 1 MONITOR):\n"
+            "Revisa la sección 'Monitores' en ENTORNO DEL SISTEMA arriba.\n"
+            "El formato es: NOMBRE: WIDTHxHEIGHT+OFFSET_X+OFFSET_Y\n"
+            "Ejemplo: HDMI-1: 1920x1080+0+0 | DP-1: 1920x1080+1920+0\n"
+            "Esto significa: monitor izquierdo x=0..1919, monitor derecho x=1920..3839.\n"
+            "scrot captura TODOS los monitores como una sola imagen ancha.\n"
+            "Para capturar SOLO un monitor específico:\n"
+            "  Monitor izquierdo: scrot -a 0,0,1920,1080 -o /tmp/screen_left.png\n"
+            "  Monitor derecho:   scrot -a 1920,0,1920,1080 -o /tmp/screen_right.png\n"
+            "CUANDO el usuario dice 'derecha' o 'izquierda', captura ESE monitor solo.\n"
+            "Las coordenadas de xdotool son ABSOLUTAS (incluyen offset del monitor).\n"
+            "Si el botón está en x=200 del monitor DERECHO y el offset es +1920:\n"
+            "  → xdotool mousemove 2120 Y  (1920 + 200 = 2120)\n\n"
             "Comandos exactos (Linux):\n"
-            "  Screenshot:  scrot -o /tmp/screen.png && cat /tmp/screen.png  (lee la imagen)\n"
-            "  Resolución:  xdpyinfo | grep dimensions  (saber tamaño de pantalla)\n"
+            "  Screenshot un monitor: scrot -a OFFSET_X,0,WIDTH,HEIGHT -o /tmp/screen.png\n"
+            "  Screenshot todo:       scrot -o /tmp/screen_full.png\n"
             "  Mover mouse: xdotool mousemove X Y\n"
             "  Clic:        xdotool click 1\n"
             "  Doble clic:  xdotool click --repeat 2 1\n"
@@ -738,7 +778,16 @@ class Gateway:
             "  Si CDP no responde: iterar con xdotool key ctrl+Tab + leer título.\n"
             "  Buscar pestaña: iterar hasta encontrar el título que contiene el texto buscado.\n\n"
 
-            "MEMORIA: Guarda TODO dato del usuario. Actualiza si cambia.\n\n"
+            "MEMORIA Y APRENDIZAJE:\n"
+            "- Guarda TODO dato del usuario. Actualiza si cambia.\n"
+            "- APRENDIZAJE DE ERRORES (IMPORTANTE): Cuando una tarea te cueste trabajo,\n"
+            "  falle varias veces, o descubras un truco que funciona, GUÁRDALO en memoria\n"
+            "  como un 'procedimiento aprendido' con categoría 'technical'. Ejemplo:\n"
+            "  'Para enviar correo en Gmail: usar atajo c, Tab entre campos, NO usar mouse'\n"
+            "  'Monitor derecho de Mi Jefe tiene offset +1920, siempre sumar 1920 a las X'\n"
+            "  'Firefox de Mi Jefe tiene ~30 pestañas, CDP no está activo, usar Ctrl+Tab'\n"
+            "- Antes de hacer tareas de escritorio, BUSCA en memoria si ya aprendiste\n"
+            "  un procedimiento para esa tarea. Si lo encuentras, SIGUE ese procedimiento.\n\n"
 
             "TAREAS: Fechas/horas → tarea programada.\n\n"
 
@@ -1011,9 +1060,23 @@ class Gateway:
         try:
             recent = self.conversations.get_recent(self.current_session_id, limit=10)
             if recent:
-                await asyncio.to_thread(self.learner.extract_facts, recent)
+                await self.learner.extract_facts(recent)
+                log.info("gateway.facts_extracted", count=len(recent))
         except Exception:
             log.exception("gateway.fact_extraction_failed")
+
+    async def _extract_facts_for_session(self, session_id: str) -> None:
+        """Extract all facts from a completed session (more thorough than periodic)."""
+        if not self.learner or not self.conversations:
+            return
+        try:
+            messages = self.conversations.get_session_messages(session_id)
+            if len(messages) >= 4:
+                await self.learner.extract_facts(messages[-30:])
+                log.info("gateway.session_facts_extracted", session_id=session_id,
+                         messages=len(messages))
+        except Exception:
+            log.exception("gateway.session_facts_extraction_failed")
 
     async def _generate_session_summary(self, session_id: str) -> None:
         """Generate and store a summary of the completed session."""
