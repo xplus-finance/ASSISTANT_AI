@@ -1,6 +1,6 @@
 # Configuracion de WhatsApp Business API
 
-Guia completa para integrar el asistente con WhatsApp usando la API oficial de Meta (Cloud API).
+Guia completa para integrar el asistente con WhatsApp usando la API oficial de Meta (Cloud API). Funciona en Windows, Linux y macOS.
 
 ## Requisitos
 
@@ -47,22 +47,43 @@ Meta te da un numero de prueba gratuito para desarrollo. Para produccion:
 
 El asistente corre un servidor webhook en `localhost:8443`. Necesitas exponer ese puerto a internet para que Meta pueda enviar los mensajes entrantes.
 
+#### Linux
+
 ```bash
-# Instalar cloudflared
 # Opcion 1: descarga directa
 curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o cloudflared
 chmod +x cloudflared
 
 # Opcion 2: via apt (Debian/Ubuntu)
-# sudo apt install cloudflared
+sudo apt install cloudflared
 
-# Crear tunnel temporal (para pruebas)
-./cloudflared tunnel --url http://localhost:8443
+# Opcion 3: via pacman (Arch)
+sudo pacman -S cloudflared
+```
+
+#### macOS
+
+```bash
+brew install cloudflared
+```
+
+#### Windows
+
+```powershell
+winget install --id Cloudflare.cloudflared -e
+```
+
+O descarga el binario desde [github.com/cloudflare/cloudflared/releases](https://github.com/cloudflare/cloudflared/releases).
+
+#### Crear tunnel temporal (para pruebas)
+
+```bash
+cloudflared tunnel --url http://localhost:8443
 ```
 
 Cloudflared te dara una URL tipo `https://algo-random.trycloudflare.com`. Copia esa URL.
 
-Para produccion, configura un tunnel permanente con un dominio propio:
+#### Tunnel permanente (produccion)
 
 ```bash
 # Login
@@ -112,7 +133,9 @@ El `WHATSAPP_WEBHOOK_SECRET` es el **App Secret** de tu aplicacion (lo encuentra
 ### 8. Probar
 
 1. Asegurate de que el tunnel de Cloudflare esta corriendo
-2. Inicia el asistente
+2. Inicia el asistente:
+   - Linux/macOS: `source .venv/bin/activate && python -m src.main`
+   - Windows: doble clic en `start.bat` o `.venv\Scripts\python.exe -m src.main`
 3. Desde WhatsApp, envia un mensaje al numero del bot
 4. Si usas el numero de prueba de Meta, primero debes agregar tu numero personal como "tester" en el dashboard
 
@@ -135,13 +158,15 @@ Referencia de precios: [Meta WhatsApp Pricing](https://developers.facebook.com/d
 - **Webhook solo en localhost** -- el servidor web corre en `127.0.0.1`, solo accesible via el tunnel
 - **Verificacion de firma** -- cada webhook se verifica con HMAC-SHA256 usando el App Secret
 - **Sin puertos abiertos** -- Cloudflare Tunnel crea una conexion saliente, no necesitas abrir puertos en tu firewall
+- **Ejecucion en sandbox** -- los comandos del asistente se ejecutan aislados (bubblewrap en Linux, subprocess con timeout en Windows/macOS)
+- **Permisos endurecidos** -- en Linux/macOS, los archivos sensibles (.env, data/, logs/) se protegen automaticamente al arrancar
 
 ## Tipos de mensaje soportados
 
 | Tipo | Recibir | Enviar |
 |---|---|---|
 | Texto | Si | Si |
-| Audio/Voz | Si (se descarga automaticamente) | Si |
+| Audio/Voz | Si (se descarga y transcribe localmente con faster-whisper) | Si (multiples motores TTS) |
 | Imagen | Si (se descarga automaticamente) | No (pendiente) |
 | Documento | Si (se descarga automaticamente) | Si |
 | Sticker | Si (se trata como imagen) | No |
@@ -153,7 +178,7 @@ Referencia de precios: [Meta WhatsApp Pricing](https://developers.facebook.com/d
 ### El webhook no verifica
 - Asegurate de que el tunnel esta corriendo y la URL es correcta
 - Verifica que el `WHATSAPP_VERIFY_TOKEN` coincide exactamente
-- Revisa los logs del asistente: `tail -f logs/assistant.log`
+- Revisa los logs del asistente: `tail -f logs/app.log` (Linux/macOS) o abre `logs\app.log` (Windows)
 
 ### No llegan mensajes
 - Verifica que estas suscrito al campo "messages" en el webhook

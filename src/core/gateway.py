@@ -1,10 +1,4 @@
-"""
-Central orchestrator for the Personal AI Assistant.
-
-The Gateway ties together every subsystem — security, memory, AI bridge,
-channels, learning, skills — and implements the main message-processing
-pipeline.  All inbound messages flow through ``handle_message``.
-"""
+"""Central orchestrator for the Personal AI Assistant."""
 
 from __future__ import annotations
 
@@ -19,11 +13,9 @@ import structlog
 log = structlog.get_logger("assistant.core.gateway")
 
 
-# ---------------------------------------------------------------------------
-# Rate limiter (sliding-window per sender)
-# ---------------------------------------------------------------------------
-
 class _RateLimiter:
+    """Sliding-window rate limiter per sender."""
+
     def __init__(self, max_per_minute: int) -> None:
         self._max = max_per_minute
         self._windows: dict[str, deque[float]] = {}
@@ -70,6 +62,9 @@ _COMPLEX_KEYWORDS = [
     "screenshot", "captura", "pantalla", "firefox", "chrome",
     "browser", "navegador", "ventana", "ventanas", "window",
     "email", "correo", "localiza", "encuentra", "abre",
+    "continúa", "continua", "sigue", "retoma", "vuelve",
+    "intentar", "intenta", "intentalo", "inténtalo", "retry",
+    "continue", "keep going", "try again",
 ]
 
 
@@ -78,18 +73,13 @@ def _compute_next_run(pattern: str) -> str | None:
     return None  # TODO: implement recurrence parsing
 
 
-# ---------------------------------------------------------------------------
-# Gateway
-# ---------------------------------------------------------------------------
-
 class Gateway:
-    """Central orchestrator. Lifecycle: start() → runs → stop()."""
+    """Central orchestrator. Lifecycle: start() -> runs -> stop()."""
 
     def __init__(self, config: Any) -> None:
         self._config = config
         self._running = False
 
-        # All subsystems — initialized in start()
         self.security: Any = None
         self.memory: Any = None
         self.conversations: Any = None
@@ -114,21 +104,15 @@ class Gateway:
         )
         self._message_counter: int = 0
 
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
-
     async def start(self) -> None:
         log.info("gateway.starting")
         cfg = self._config
 
-        # -- Database / memory
         from src.memory.engine import MemoryEngine
         db_path = f"{cfg.data_dir}/assistant.db"
         encryption_key = cfg.db_encryption_key or None
         self.memory = MemoryEngine(db_path, encryption_key=encryption_key)
 
-        # -- Memory stores
         from src.memory.conversation import ConversationStore
         from src.memory.relationships import RelationshipTracker
         from src.memory.tasks import TaskManager
@@ -139,7 +123,6 @@ class Gateway:
         self.tasks = TaskManager(self.memory)
         self.learning_store = LearningStore(self.memory)
 
-        # -- Security
         try:
             from src.core.security import SecurityGuardian
             pin = getattr(cfg, "security_pin", "") or None
@@ -154,11 +137,9 @@ class Gateway:
         except Exception:
             log.warning("gateway.security_init_failed", exc_info=True)
 
-        # -- Approval gate
         from src.utils.approval import ApprovalGate
         self.approval_gate = ApprovalGate()
 
-        # -- Audio (lazy init)
         try:
             from src.audio.transcriber import Transcriber
             self.transcriber = Transcriber(
@@ -175,7 +156,6 @@ class Gateway:
         except Exception:
             log.info("gateway.synthesizer_not_available", exc_info=True)
 
-        # -- Claude bridge
         try:
             from src.core.claude_bridge import ClaudeBridge
             self.claude = ClaudeBridge(
@@ -190,7 +170,6 @@ class Gateway:
         except Exception:
             log.warning("gateway.claude_bridge_init_failed", exc_info=True)
 
-        # -- Context builder
         try:
             from src.memory.context import ContextBuilder
             self.context_builder = ContextBuilder(
@@ -202,7 +181,6 @@ class Gateway:
         except Exception:
             log.info("gateway.context_builder_not_available", exc_info=True)
 
-        # -- Onboarding
         try:
             from src.onboarding.wizard import OnboardingWizard
             self.onboarding = OnboardingWizard(
@@ -212,7 +190,6 @@ class Gateway:
         except Exception:
             log.info("gateway.onboarding_not_available", exc_info=True)
 
-        # -- Skills
         try:
             from src.skills.registry import SkillRegistry
             self.skill_registry = SkillRegistry(
@@ -222,7 +199,6 @@ class Gateway:
         except Exception:
             log.info("gateway.skill_registry_not_available", exc_info=True)
 
-        # -- Learning
         try:
             from src.learning.knowledge_base import KnowledgeBase
             from src.learning.learner import Learner
@@ -238,7 +214,6 @@ class Gateway:
         except Exception:
             log.info("gateway.learning_not_available", exc_info=True)
 
-        # -- Scheduler
         try:
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
             self.scheduler = AsyncIOScheduler(
@@ -253,7 +228,6 @@ class Gateway:
         except Exception:
             log.info("gateway.scheduler_not_available", exc_info=True)
 
-        # -- Hot-reload
         self.hot_reloader = None
         try:
             from src.core.hot_reload import HotReloader
@@ -262,7 +236,6 @@ class Gateway:
         except Exception:
             log.info("gateway.hot_reload_not_available", exc_info=True)
 
-        # -- Telegram channel
         try:
             from src.channels.telegram import TelegramChannel
             tg = TelegramChannel(token=cfg.telegram_bot_token)
@@ -273,7 +246,6 @@ class Gateway:
 
         self._running = True
 
-        # Start all channels
         if self.channels:
             log.info("gateway.ready", channels=list(self.channels.keys()))
             for ch in self.channels.values():
@@ -281,7 +253,6 @@ class Gateway:
         else:
             log.warning("gateway.no_channels")
 
-        # Keep alive — wait until stop() is called
         self._stop_event = asyncio.Event()
         await self._stop_event.wait()
 
@@ -289,7 +260,6 @@ class Gateway:
         log.info("gateway.stopping")
         self._running = False
 
-        # Unblock the keep-alive wait
         if hasattr(self, '_stop_event'):
             self._stop_event.set()
 
@@ -299,7 +269,6 @@ class Gateway:
             except Exception:
                 pass
 
-        # Stop hot-reloader
         if self.hot_reloader:
             self.hot_reloader.stop()
 
@@ -314,48 +283,33 @@ class Gateway:
 
         log.info("gateway.stopped")
 
-    # ------------------------------------------------------------------
-    # Telegram message adapter
-    # ------------------------------------------------------------------
-
     async def _on_telegram_message(self, incoming: Any) -> None:
-        """Adapter: converts IncomingMessage from telegram.py to handle_message."""
         await self.handle_message(incoming)
 
-    # ------------------------------------------------------------------
-    # Main message pipeline
-    # ------------------------------------------------------------------
-
     async def handle_message(self, message: Any) -> None:
-        """Process an inbound message end-to-end."""
-
         chat_id = message.chat_id
         text = message.text or ""
         audio_path = getattr(message, "audio_path", None)
         message_type = getattr(message, "message_type", "text")
         channel_name = getattr(message, "channel", "telegram")
 
-        # -- Authorization
         if self.security is not None:
             if not self.security.is_authorized(int(chat_id)):
                 log.warning("gateway.unauthorized", chat_id=chat_id)
                 return
 
-        # -- Rate limiting
         if not self._rate_limiter.is_allowed(str(chat_id)):
             log.warning("gateway.rate_limited", chat_id=chat_id)
             await self._send(channel_name, chat_id,
                              "Has enviado demasiados mensajes. Espera un momento.")
             return
 
-        # -- Prompt injection detection (log only — owner has full control)
         if self.security and text:
             is_injection, patterns = self.security.detect_prompt_injection(text)
             if is_injection:
                 log.warning("gateway.prompt_injection_detected",
                             chat_id=chat_id, patterns=patterns)
 
-        # -- Audio transcription
         if message_type == "audio" and audio_path:
             try:
                 from src.audio.processor import convert_ogg_to_wav
@@ -371,7 +325,6 @@ class Gateway:
         if not text.strip():
             return
 
-        # -- Session management
         now = time.time()
         if (self.last_message_time > 0
                 and (now - self.last_message_time) > SESSION_INACTIVITY_SECS):
@@ -379,7 +332,6 @@ class Gateway:
             log.info("gateway.new_session", session_id=self.current_session_id)
         self.last_message_time = now
 
-        # -- Pending approval response
         if self.approval_gate:
             pending = self.approval_gate.get_pending()
             if pending:
@@ -389,12 +341,10 @@ class Gateway:
                 await self._send(channel_name, chat_id, f"Operación {status}.")
                 return
 
-        # -- Command routing
         if text.startswith("!"):
             await self._handle_command(text, channel_name, chat_id)
             return
 
-        # -- Onboarding
         if self.onboarding is not None:
             try:
                 is_complete = await self.onboarding.is_onboarding_complete()
@@ -402,7 +352,6 @@ class Gateway:
                     state = self.onboarding._state
 
                     if not state.waiting_for_answer:
-                        # First contact or question not yet sent — send the question
                         step_def = _import_steps()[state.current_step]
                         prompt = step_def["prompt_fn"](state.answers)
                         state.waiting_for_answer = True
@@ -410,13 +359,12 @@ class Gateway:
                         await self._send(channel_name, chat_id, prompt)
                         return
 
-                    # User is responding to a question — process the answer
                     response, done = await self.onboarding.process_step(
                         state.current_step, text
                     )
                     if not done:
                         state.current_step += 1
-                        state.waiting_for_answer = True  # next question included in response
+                        state.waiting_for_answer = True
                         self.onboarding._persist_state()
                     else:
                         state.is_complete = True
@@ -426,7 +374,6 @@ class Gateway:
             except Exception:
                 log.exception("gateway.onboarding_error")
 
-        # -- Voice parameter changes (local, no Claude needed)
         voice_change = self._detect_voice_change(text)
         if voice_change and self.synthesizer:
             self.synthesizer.set_voice_params(**voice_change)
@@ -444,15 +391,13 @@ class Gateway:
             )
             return
 
-        # -- Typing indicator
         await self._send_typing(channel_name, chat_id)
 
-        # -- Claude conversation
         try:
             response_text = await self._ask_claude(text)
         except asyncio.CancelledError:
             log.warning("gateway.request_cancelled", chat_id=chat_id)
-            return  # Shutdown o cancelación externa — salir limpiamente
+            return
         if not response_text:
             response_text = "No pude generar una respuesta. Intenta de nuevo."
         elif "max turns" in response_text.lower() or "reached max" in response_text.lower():
@@ -462,44 +407,38 @@ class Gateway:
                 "'continúa' para que retome donde quedé."
             )
 
-        # -- Detect if user wants audio response
         wants_audio = (
             message_type == "audio"
             or any(kw in text.lower() for kw in _AUDIO_KEYWORDS)
         )
 
-        # -- Audio synthesis
         audio_response_path = None
         if wants_audio and self.synthesizer:
             try:
                 raw_audio = await asyncio.to_thread(
                     self.synthesizer.synthesize, response_text
                 )
-                # Convert to OGG/Opus for Telegram voice notes
                 if raw_audio and not raw_audio.endswith(".ogg"):
                     try:
                         from src.audio.processor import convert_wav_to_ogg
                         audio_response_path = convert_wav_to_ogg(raw_audio)
                     except Exception:
-                        audio_response_path = raw_audio  # Send as-is
+                        audio_response_path = raw_audio
                 else:
                     audio_response_path = raw_audio
             except Exception:
                 log.exception("gateway.synthesis_failed")
 
-        # -- Scan output for accidentally leaked secrets
         if self.security and response_text:
             output_ok, output_reason = self.security.validate_output(response_text)
             if not output_ok:
                 log.warning("gateway.sensitive_output_detected", reason=output_reason)
 
-        # -- Reply
         if audio_response_path:
             await self._send_audio(channel_name, chat_id, audio_response_path)
         else:
             await self._send(channel_name, chat_id, response_text)
 
-        # -- Persist to memory
         try:
             self.conversations.add_message(
                 role="user", message=text,
@@ -514,21 +453,14 @@ class Gateway:
         except Exception:
             log.exception("gateway.persist_failed")
 
-        # -- Periodic fact extraction (every 5 messages)
         self._message_counter += 1
         if self._message_counter % 5 == 0 and self.learner:
             asyncio.create_task(self._extract_facts_bg())
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
     async def _ask_claude(self, user_text: str) -> str:
-        """Build context, call Claude CLI, return response."""
         if self.claude is None:
             return "Perdona, no puedo responder en este momento. Intenta de nuevo en unos minutos."
 
-        # Build context
         system_prompt = ""
         if self.context_builder:
             try:
@@ -540,7 +472,6 @@ class Gateway:
             except Exception:
                 log.exception("gateway.context_build_failed")
 
-        # Detect if this is a complex task that needs more autonomy
         is_complex = any(kw in user_text.lower() for kw in _COMPLEX_KEYWORDS)
 
         try:
@@ -550,13 +481,13 @@ class Gateway:
                 complex_task=is_complex,
             )
         except asyncio.CancelledError:
-            raise  # No swallowear — dejar que se propague ordenadamente
+            raise
         except Exception:
             log.exception("gateway.claude_failed")
             return "Perdona, tuve un problema procesando tu solicitud. Dame un momento e intenta de nuevo."
 
     def _build_system_prompt(self, ctx: Any) -> str:
-        """Convert a ConversationContext into a clean system prompt string."""
+        """Convert a ConversationContext into the system prompt string."""
         profile = ctx.user_profile or {}
         assistant_name = profile.get("assistant_name", "Asistente")
         user_name = profile.get("user_name", "usuario")
@@ -573,7 +504,6 @@ class Gateway:
         if work_area:
             parts.append(f"Área de trabajo del usuario: {work_area}")
 
-        # Recent conversation history
         if ctx.recent_messages:
             lines = []
             for msg in ctx.recent_messages[-10:]:
@@ -585,7 +515,6 @@ class Gateway:
             if lines:
                 parts.append("Historial reciente:\n" + "\n".join(lines))
 
-        # Relevant facts
         if ctx.relevant_facts:
             facts_text = "\n".join(
                 f"- {f.get('fact', f.get('content', ''))}"
@@ -594,7 +523,6 @@ class Gateway:
             if facts_text:
                 parts.append(f"Datos relevantes:\n{facts_text}")
 
-        # Pending tasks
         if ctx.pending_tasks:
             tasks_text = "\n".join(
                 f"- {t.get('title', '')}" for t in ctx.pending_tasks if t.get('title')
@@ -602,7 +530,6 @@ class Gateway:
             if tasks_text:
                 parts.append(f"Tareas pendientes:\n{tasks_text}")
 
-        # Active projects
         if ctx.active_projects:
             projects_text = "\n".join(
                 f"- {p.get('name', '')}" for p in ctx.active_projects if p.get('name')
@@ -610,6 +537,7 @@ class Gateway:
             if projects_text:
                 parts.append(f"Proyectos activos:\n{projects_text}")
 
+        # === SYSTEM PROMPT CONTENT — DO NOT MODIFY ===
         parts.append(
             "IDENTIDAD Y PERSONALIDAD:\n"
             f"- Eres {assistant_name}, asistente personal de {user_name}.\n"
@@ -715,30 +643,26 @@ class Gateway:
             "     Puedes sugerir al usuario activarlo si no está disponible.\n"
             "- Si NO pide ejecucion visual, simplemente ejecuta el comando normalmente."
         )
+        # === END SYSTEM PROMPT CONTENT ===
 
         return "\n\n".join(parts)
 
     def _detect_voice_change(self, text: str) -> dict | None:
-        """Detect if user is requesting a voice parameter change.
-        Returns dict of params to pass to synthesizer.set_voice_params(), or None.
+        """Detect voice parameter change requests. Returns params dict or None.
 
-        Uses strict intent detection to avoid triggering on normal conversation.
-        Requires BOTH a voice-context word AND an action/modifier word.
+        Requires BOTH a voice-context word AND an action/modifier word,
+        and only triggers on short messages (<80 chars).
         """
         import re
         lower = text.lower().strip()
 
-        # Short messages (under 60 chars) with clear voice intent
-        # Long messages are likely conversation, not voice commands
         if len(lower) > 80:
             return None
 
-        # Must contain a voice-context word (the subject being changed)
         voice_context = ["voz", "voice", "tono", "habla", "hablar", "habla más",
                          "hablar más", "la voz", "tu voz", "mi voz"]
         has_voice_context = any(kw in lower for kw in voice_context)
 
-        # Must contain a change intent (action/modifier)
         change_intents = ["cambia", "cambiar", "pon", "poner", "quiero", "hazla",
                           "hazlo", "más grave", "mas grave", "más agud", "mas agud",
                           "más rápid", "mas rapid", "más lent", "mas lent",
@@ -750,7 +674,6 @@ class Gateway:
 
         params: dict = {}
 
-        # Pitch detection (check specific patterns before general ones)
         if any(w in lower for w in ["muy grave", "super grave", "very deep"]):
             params["pitch"] = "very_low"
         elif any(w in lower for w in ["más grave", "mas grave"]):
@@ -763,7 +686,6 @@ class Gateway:
         elif "normal" in lower:
             params["pitch"] = "normal"
 
-        # Speed detection (relative to current speed)
         current_speed = self.synthesizer._speed if self.synthesizer else 1.0
 
         speed_match = re.search(r"(\d+)\s*%?\s*(más\s*)?(rápid|rapid|fast)", lower)
@@ -778,10 +700,8 @@ class Gateway:
         return params if params else None
 
     def _voice_change_confirmation(self, params: dict) -> str:
-        """Generate a human-friendly confirmation of voice changes."""
         parts = []
         if "pitch" in params:
-            # Read actual value from synthesizer after applying
             actual_pitch = self.synthesizer._pitch if self.synthesizer else params["pitch"]
             pitch_names = {
                 "very_low": "muy grave (masculina)",
@@ -792,7 +712,6 @@ class Gateway:
             }
             parts.append(f"voz {pitch_names.get(actual_pitch, actual_pitch)}")
         if "speed" in params:
-            # Read actual value from synthesizer after applying
             actual_speed = self.synthesizer._speed if self.synthesizer else params["speed"]
             pct = int((actual_speed - 1.0) * 100)
             if pct > 0:
@@ -804,7 +723,6 @@ class Gateway:
         return "Listo, cambié la configuración: " + ", ".join(parts) + ". Pruébame pidiendo un audio."
 
     async def _handle_command(self, text: str, channel: str, chat_id: Any) -> None:
-        """Route !commands to skills."""
         if self.skill_registry is None:
             await self._send(channel, chat_id, "Sistema de skills no disponible.")
             return
@@ -816,7 +734,6 @@ class Gateway:
             return
 
         try:
-            # Extract args after the trigger
             args = text
             for trigger in skill.triggers:
                 if text.lower().startswith(trigger):
@@ -832,7 +749,6 @@ class Gateway:
                 "approval_gate": self.approval_gate,
                 "security": self.security,
             })
-            # Check if result contains an image/file to send
             data = getattr(result, "data", None) or {}
             result_type = data.get("type", "")
             if result_type == "screenshot" and data.get("path"):
@@ -849,7 +765,6 @@ class Gateway:
                              "Hubo un error ejecutando el comando. Revisa los logs para detalles.")
 
     async def _send(self, channel_name: str, chat_id: Any, text: str) -> None:
-        """Send text through the named channel."""
         ch = self.channels.get(channel_name)
         if ch:
             try:
@@ -859,22 +774,18 @@ class Gateway:
 
     async def _send_photo(self, channel_name: str, chat_id: Any, path: str,
                           caption: str | None = None) -> None:
-        """Send a photo/screenshot through the named channel."""
         ch = self.channels.get(channel_name)
         if ch and hasattr(ch, "send_photo"):
             try:
                 await ch.send_photo(str(chat_id), path, caption=caption)
             except Exception:
                 log.exception("gateway.send_photo_failed")
-                # Fallback: send as document
                 await self._send_document(channel_name, chat_id, path, caption=caption)
         else:
-            # Channel doesn't support photos, try document
             await self._send_document(channel_name, chat_id, path, caption=caption)
 
     async def _send_document(self, channel_name: str, chat_id: Any, path: str,
                              caption: str | None = None) -> None:
-        """Send a file/document through the named channel."""
         ch = self.channels.get(channel_name)
         if ch and hasattr(ch, "send_document"):
             try:
@@ -896,7 +807,6 @@ class Gateway:
                 log.exception("gateway.send_audio_failed")
 
     async def _send_typing(self, channel_name: str, chat_id: Any) -> None:
-        """Send a typing indicator so the user knows we're processing."""
         ch = self.channels.get(channel_name)
         if ch and hasattr(ch, "send_typing"):
             try:
@@ -905,7 +815,6 @@ class Gateway:
                 pass  # typing indicator is best-effort
 
     async def _check_scheduled_tasks(self) -> None:
-        """Execute due tasks and notify user via Telegram."""
         if self.tasks is None:
             return
         try:
@@ -919,7 +828,6 @@ class Gateway:
             task_id = task.get("id")
             log.info("gateway.executing_scheduled_task", title=title, task_id=task_id)
 
-            # Notify user that task is being executed
             notification = f"⏰ Ejecutando tarea programada: {title}"
             chat_id = str(self._config.authorized_chat_id)
             for ch in self.channels.values():
@@ -928,7 +836,6 @@ class Gateway:
                 except Exception:
                     pass
 
-            # Execute the task
             result_text = ""
             try:
                 if self.claude:
@@ -940,7 +847,6 @@ class Gateway:
                 result_text = f"No pude completar la tarea: {title}"
                 log.exception("gateway.scheduled_task_failed", task_id=task_id)
 
-            # Send result to user
             for ch in self.channels.values():
                 try:
                     msg = f"Tarea completada: {title}\n\n{result_text[:3000]}"
@@ -948,10 +854,8 @@ class Gateway:
                 except Exception:
                     pass
 
-            # Update task status
             try:
                 if task.get("is_recurring") or task.get("recurrence_pattern"):
-                    # Recurring — calculate next run
                     next_run = _compute_next_run(task.get("recurrence_pattern", ""))
                     self.tasks.update_status(task_id, "recurring")
                     if hasattr(self.tasks, 'mark_run'):

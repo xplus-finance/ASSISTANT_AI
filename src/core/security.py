@@ -11,10 +11,7 @@ from pathlib import Path
 from src.utils.logger import get_security_logger, get_audit_logger
 from src.utils.platform import IS_WINDOWS
 
-
-# ─────────────────────────────────────────────────────────────────
-# LAYER 3: Command validation — blacklists & whitelist
-# ─────────────────────────────────────────────────────────────────
+# Command validation — blacklists
 
 _BLOCKED_COMMANDS_LINUX: list[str] = [
     "rm -rf /", "rm -rf /*", "mkfs", "dd if=/dev/zero", "dd if=/dev/random",
@@ -73,10 +70,7 @@ _COMPILED_FORBIDDEN: list[tuple[re.Pattern, str]] = [
     (re.compile(pattern), desc) for pattern, desc in FORBIDDEN_PATTERNS
 ]
 
-
-# ─────────────────────────────────────────────────────────────────
-# LAYER 5: Anti-prompt-injection patterns
-# ─────────────────────────────────────────────────────────────────
+# Anti-prompt-injection patterns
 
 INJECTION_PATTERNS: list[tuple[str, str]] = [
     (r"(?i)ignore\s+(all\s+)?previous\s+(instructions?|prompts?|rules?)", "Attempt to override system instructions"),
@@ -112,10 +106,7 @@ _COMPILED_INJECTION: list[tuple[re.Pattern, str]] = [
     (re.compile(pattern), desc) for pattern, desc in INJECTION_PATTERNS
 ]
 
-
-# ─────────────────────────────────────────────────────────────────
-# LAYER 3 (file access): Sensitive file patterns
-# ─────────────────────────────────────────────────────────────────
+# Sensitive file patterns
 
 _SENSITIVE_FILE_PATTERNS_COMMON: list[tuple[str, str]] = [
     (r"\.ssh[/\\]", "SSH keys and config"),
@@ -165,10 +156,7 @@ _COMPILED_SENSITIVE_FILES: list[tuple[re.Pattern, str]] = [
     (re.compile(pattern), desc) for pattern, desc in SENSITIVE_FILE_PATTERNS
 ]
 
-
-# ─────────────────────────────────────────────────────────────────
-# LAYER 6: Output validation — detect leaked secrets
-# ─────────────────────────────────────────────────────────────────
+# Output validation — detect leaked secrets
 
 SENSITIVE_OUTPUT_PATTERNS: list[tuple[str, str]] = [
     (r"(?i)(api[_-]?key|apikey)\s*[:=]\s*\S{10,}", "Possible API key in output"),
@@ -193,10 +181,7 @@ _COMPILED_SENSITIVE_OUTPUT: list[tuple[re.Pattern, str]] = [
     (re.compile(pattern), desc) for pattern, desc in SENSITIVE_OUTPUT_PATTERNS
 ]
 
-
-# ─────────────────────────────────────────────────────────────────
-# Rate Limiter (Layer 7)
-# ─────────────────────────────────────────────────────────────────
+# Rate Limiter
 
 class RateLimiter:
     def __init__(self) -> None:
@@ -218,10 +203,7 @@ class RateLimiter:
     def reset_all(self) -> None:
         self._requests.clear()
 
-
-# ─────────────────────────────────────────────────────────────────
-# Security Guardian (main class)
-# ─────────────────────────────────────────────────────────────────
+# Security Guardian
 
 class SecurityGuardian:
     def __init__(

@@ -1,13 +1,15 @@
 # Configuracion de Telegram
 
-Telegram es el canal **recomendado** para empezar. Es gratis, sin riesgo de ban, y se configura en 5 minutos.
+Telegram es el canal recomendado para empezar. Es gratis, sin riesgo de ban, y se configura en minutos.
 
 ---
 
 ## Requisitos previos
 
 - Una cuenta de Telegram (la app instalada en tu telefono o escritorio)
-- El asistente instalado (haber ejecutado `install.sh`)
+- El asistente instalado (haber ejecutado `install.sh` en Linux/macOS o `install.ps1` en Windows)
+
+Si aun no instalaste el asistente, el propio instalador te guia paso a paso por la configuracion de Telegram. No necesitas seguir esta guia por separado si usas el instalador interactivo.
 
 ---
 
@@ -87,7 +89,11 @@ Si ya tienes el token del bot:
 Abre el archivo `.env` en el directorio del proyecto:
 
 ```bash
+# Linux / macOS
 nano .env
+
+# Windows (PowerShell)
+notepad .env
 ```
 
 Busca y rellena estas lineas:
@@ -102,15 +108,26 @@ AUTHORIZED_CHAT_ID=123456789
 - El Chat ID es un **numero entero** (sin comillas, sin espacios)
 - No compartas estos valores con nadie
 - No subas el archivo `.env` a git (ya esta en `.gitignore`)
+- En Linux/macOS, el instalador establece permisos 600 en `.env` automaticamente
 
 ---
 
 ## Paso 4: Arrancar el asistente
 
+### Linux / macOS
+
 ```bash
 cd /ruta/al/personal-ai-assistant
 source .venv/bin/activate
 python -m src.main
+```
+
+### Windows
+
+Doble clic en `start.bat`, o desde PowerShell:
+
+```powershell
+.venv\Scripts\python.exe -m src.main
 ```
 
 Deberias ver algo como:
@@ -120,7 +137,7 @@ Deberias ver algo como:
 [INFO] telegram.bot_started  username=mi_asistente_ia_bot
 ```
 
-Si usas systemd:
+Si usas systemd (Linux):
 
 ```bash
 sudo systemctl start ai-assistant
@@ -135,7 +152,7 @@ journalctl -u ai-assistant -f   # Ver logs en vivo
 2. Busca tu bot por su username (ej: `@mi_asistente_ia_bot`)
 3. Pulsa **"Iniciar"** o envia `/start`
 4. Envia **"hola"**
-5. El bot deberia responder con el flujo de onboarding (te pregunta tu nombre, preferencias, etc.)
+5. El bot responde con el flujo de onboarding (te pregunta tu nombre, preferencias, etc.)
 
 Si todo funciona, el bot esta listo para usar.
 
@@ -148,7 +165,7 @@ Si todo funciona, el bot esta listo para usar.
 1. **Verifica que el asistente esta corriendo** -- revisa la terminal donde lo arrancaste
 2. **Verifica el token** -- abre `https://api.telegram.org/botTU_TOKEN/getMe` en el navegador. Si el token es valido, veras info del bot en JSON
 3. **Verifica que hablaste al bot correcto** -- busca el username exacto
-4. **Revisa los logs** -- `tail -20 logs/app.log`
+4. **Revisa los logs** -- `tail -20 logs/app.log` (Linux/macOS) o abre `logs\app.log` con un editor (Windows)
 
 ### "Unauthorized" o el bot ignora tus mensajes
 
@@ -181,7 +198,11 @@ Hay otra instancia del bot corriendo. Solo puede haber una:
 
 1. Busca y mata otros procesos:
    ```bash
+   # Linux / macOS
    ps aux | grep "src.main"
+
+   # Windows (PowerShell)
+   Get-Process python | Where-Object { $_.CommandLine -like "*src.main*" }
    ```
 2. Si usas systemd:
    ```bash
@@ -202,10 +223,13 @@ Hay otra instancia del bot corriendo. Solo puede haber una:
 Una vez configurado, puedes:
 
 - **Enviar mensajes de texto** -- el bot responde usando Claude
-- **Enviar notas de voz** -- se transcriben automaticamente y el bot responde al contenido
+- **Enviar notas de voz** -- se transcriben localmente con faster-whisper y el bot responde al contenido
 - **Enviar documentos** -- el bot los procesa
 - **Enviar imagenes** -- el bot puede analizarlas
-- **Recibir respuestas con audio** -- pidele que "responda con voz"
+- **Recibir respuestas con audio** -- pidele "responde con voz" o usa `!voz on`
+- **Controlar la voz** -- pidele que hable mas grave, mas rapido o mas agudo con lenguaje natural
+- **Crear skills** -- `!skill crear` genera habilidades nuevas en tiempo de ejecucion
+- **Crear servidores MCP** -- `!mcp crear` genera e instala servidores MCP automaticamente
 
 El bot tambien puede enviarte **notificaciones proactivas** (recordatorios, alertas de tareas programadas).
 
@@ -215,7 +239,9 @@ El bot tambien puede enviarte **notificaciones proactivas** (recordatorios, aler
 
 - Tu bot de Telegram es **privado** -- solo tu puedes hablar con el (gracias al filtro por `AUTHORIZED_CHAT_ID`)
 - Los mensajes viajan cifrados entre Telegram y tu servidor
-- La memoria del bot se almacena **localmente** en tu maquina, cifrada con SQLCipher (AES-256)
+- La memoria del bot se almacena **localmente** en tu maquina, cifrada con SQLCipher (AES-256) via APSW
 - Las notas de voz se transcriben **localmente** con faster-whisper (nada se envia a servicios de transcripcion externos)
-- Las respuestas se generan via Claude CLI usando tu suscripcion (no API key)
+- Las respuestas se generan via Claude Code CLI usando tu suscripcion (no API key)
+- Los comandos del sistema se ejecutan en sandbox (bubblewrap en Linux, subprocess con timeout en Windows/macOS)
+- Los permisos de archivos sensibles (.env, data/, logs/) se endurecen automaticamente al arrancar
 - Ningun dato se comparte con terceros

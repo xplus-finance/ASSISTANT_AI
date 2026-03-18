@@ -1,9 +1,4 @@
-"""
-Dynamic skill registry with filesystem hot-reload.
-
-Discovers built-in skills at startup and watches a user-skills directory
-for new ``.py`` files that are loaded automatically at runtime.
-"""
+"""Dynamic skill registry with filesystem hot-reload."""
 
 from __future__ import annotations
 
@@ -24,21 +19,14 @@ from src.skills.base_skill import BaseSkill
 
 log = structlog.get_logger("assistant.skills.registry")
 
-# Directory containing built-in skills (relative to this file)
 _BUILT_IN_DIR = Path(__file__).resolve().parent / "built_in"
 
 
 class SkillRegistry:
-    """
-    Central registry for all assistant skills.
+    """Central registry for all assistant skills.
 
-    Provides:
-
-    * Automatic loading of built-in skills from ``src/skills/built_in/``.
-    * Dynamic loading of user-created skills from a configurable directory.
-    * Filesystem watching via ``watchdog`` for hot-reload.
-    * Trigger-based lookup (``find_skill``).
-    * Database tracking of registered skills.
+    Loads built-in skills from ``src/skills/built_in/``, user skills from a
+    configurable directory, and supports hot-reload via ``watchdog``.
     """
 
     def __init__(
@@ -47,31 +35,14 @@ class SkillRegistry:
         memory_engine: MemoryEngine,
         context: dict[str, Any] | None = None,
     ) -> None:
-        """
-        Args:
-            skills_dir: Directory to watch for user-created skill files.
-            memory_engine: Database engine for tracking skill metadata.
-            context: Shared runtime context passed to skills on load.
-        """
         self._skills_dir = Path(skills_dir).resolve()
         self._memory = memory_engine
         self._context = context or {}
         self._skills: dict[str, BaseSkill] = {}
         self._lock = threading.Lock()
-        self._observer: Any = None  # watchdog Observer (lazy import)
-
-    # ------------------------------------------------------------------
-    # Loading
-    # ------------------------------------------------------------------
+        self._observer: Any = None
 
     def load_built_in(self) -> int:
-        """
-        Import all built-in skill modules and register any ``BaseSkill``
-        subclasses found.
-
-        Returns:
-            Number of skills loaded.
-        """
         count = 0
         if not _BUILT_IN_DIR.is_dir():
             log.warning("registry.no_builtin_dir", path=str(_BUILT_IN_DIR))
@@ -89,12 +60,6 @@ class SkillRegistry:
         return count
 
     def load_user_skills(self) -> int:
-        """
-        Load user-created skill files from ``skills_dir``.
-
-        Returns:
-            Number of skills loaded.
-        """
         count = 0
         self._skills_dir.mkdir(parents=True, exist_ok=True)
 
@@ -110,15 +75,7 @@ class SkillRegistry:
             log.info("registry.user_skills_loaded", count=count)
         return count
 
-    # ------------------------------------------------------------------
-    # Hot-reload (watchdog)
-    # ------------------------------------------------------------------
-
     def start_watching(self) -> None:
-        """
-        Start a ``watchdog`` observer to hot-reload skills when ``.py``
-        files are created or modified in ``skills_dir``.
-        """
         try:
             from watchdog.events import FileSystemEventHandler
             from watchdog.observers import Observer
@@ -129,7 +86,7 @@ class SkillRegistry:
             )
             return
 
-        registry = self  # closure ref
+        registry = self
 
         class _Handler(FileSystemEventHandler):
             def on_created(self, event: Any) -> None:
@@ -148,7 +105,6 @@ class SkillRegistry:
         log.info("registry.watching", path=str(self._skills_dir))
 
     def stop_watching(self) -> None:
-        """Stop the filesystem observer."""
         if self._observer is not None:
             self._observer.stop()
             self._observer.join(timeout=5)
@@ -156,7 +112,6 @@ class SkillRegistry:
             log.info("registry.watch_stopped")
 
     def _on_file_changed(self, path: str) -> None:
-        """Handle a new or modified skill file."""
         filename = os.path.basename(path)
         if filename.startswith("_"):
             return
@@ -167,22 +122,12 @@ class SkillRegistry:
             self.register(skill)
             log.info("registry.hot_reloaded", skill=skill.name)
 
-    # ------------------------------------------------------------------
-    # Registration & lookup
-    # ------------------------------------------------------------------
-
     def register(self, skill: BaseSkill) -> None:
-        """
-        Register a skill instance.
-
-        If a skill with the same name already exists, it is replaced
-        (allows hot-reload).
-        """
+        """Register a skill (replaces existing with same name for hot-reload)."""
         with self._lock:
             replacing = skill.name in self._skills
             self._skills[skill.name] = skill
 
-        # Record in database
         try:
             self._memory.execute(
                 """
@@ -201,18 +146,11 @@ class SkillRegistry:
         log.info(f"registry.{action}", skill=skill.name, triggers=skill.triggers)
 
     def unregister(self, name: str) -> bool:
-        """Remove a skill by name. Returns ``True`` if found."""
         with self._lock:
             removed = self._skills.pop(name, None)
         return removed is not None
 
     def find_skill(self, text: str) -> BaseSkill | None:
-        """
-        Find the first skill whose trigger matches *text*.
-
-        Returns:
-            The matching ``BaseSkill`` or ``None``.
-        """
         with self._lock:
             for skill in self._skills.values():
                 if skill.matches(text):
@@ -220,27 +158,15 @@ class SkillRegistry:
         return None
 
     def get_all(self) -> list[BaseSkill]:
-        """Return a list of all registered skills."""
         with self._lock:
             return list(self._skills.values())
 
     def get(self, name: str) -> BaseSkill | None:
-        """Return a skill by name, or ``None``."""
         with self._lock:
             return self._skills.get(name)
 
-    # ------------------------------------------------------------------
-    # Dynamic file loading
-    # ------------------------------------------------------------------
-
     def _load_skill_file(self, path: str) -> BaseSkill | None:
-        """
-        Dynamically import a ``.py`` file and return the first concrete
-        ``BaseSkill`` subclass instance found in it.
-
-        Returns:
-            An instantiated ``BaseSkill``, or ``None`` if none found.
-        """
+        """Dynamically import a .py file and return the first concrete BaseSkill found."""
         path = os.path.abspath(path)
         module_name = f"_skill_{Path(path).stem}_{id(path)}"
 
@@ -254,7 +180,6 @@ class SkillRegistry:
             sys.modules[module_name] = module
             spec.loader.exec_module(module)  # type: ignore[union-attr]
 
-            # Find the first concrete BaseSkill subclass
             for _name, obj in inspect.getmembers(module, inspect.isclass):
                 if (
                     issubclass(obj, BaseSkill)
@@ -275,21 +200,16 @@ class SkillRegistry:
             sys.modules.pop(module_name, None)
 
     def _instantiate_skill(self, cls: type) -> BaseSkill | None:
-        """
-        Try to instantiate a skill class.  If the constructor requires
-        specific dependencies, inject them from the context.
-        """
+        """Instantiate a skill class, injecting dependencies from context."""
         try:
             sig = inspect.signature(cls.__init__)
             params = list(sig.parameters.keys())
 
-            # Simple case: no args besides self
             if len(params) <= 1:
                 return cls()  # type: ignore[abstract]
 
-            # Try to inject known dependencies from context
             kwargs: dict[str, Any] = {}
-            for p in params[1:]:  # skip 'self'
+            for p in params[1:]:
                 if p in self._context:
                     kwargs[p] = self._context[p]
                 elif p == "memory_engine" and "memory" in self._context:
@@ -300,10 +220,6 @@ class SkillRegistry:
         except Exception:
             log.error("registry.instantiate_error", cls=cls.__name__, exc_info=True)
             return None
-
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
 
     def __del__(self) -> None:
         self.stop_watching()

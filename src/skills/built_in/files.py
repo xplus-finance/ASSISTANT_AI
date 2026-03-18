@@ -14,11 +14,12 @@ from typing import Any
 import structlog
 
 from src.skills.base_skill import BaseSkill, SkillResult
+from src.utils.platform import IS_WINDOWS
 
 log = structlog.get_logger("assistant.skills.files")
 
-# Directories that are always forbidden
-_FORBIDDEN_PATHS: frozenset[str] = frozenset({
+# Directories that are always forbidden (platform-specific)
+_FORBIDDEN_PATHS_UNIX: frozenset[str] = frozenset({
     "/etc/shadow",
     "/etc/passwd",
     "/etc/sudoers",
@@ -28,6 +29,14 @@ _FORBIDDEN_PATHS: frozenset[str] = frozenset({
     "/dev",
     "/boot",
 })
+
+_FORBIDDEN_PATHS_WIN: frozenset[str] = frozenset({
+    "\\Windows\\System32\\config",
+    "\\Windows\\repair",
+    "\\Windows\\System32\\drivers\\etc\\hosts",
+})
+
+_FORBIDDEN_PATHS: frozenset[str] = _FORBIDDEN_PATHS_WIN if IS_WINDOWS else _FORBIDDEN_PATHS_UNIX
 
 # Maximum file size to read (bytes)
 _MAX_READ_SIZE = 512_000  # 500 KB

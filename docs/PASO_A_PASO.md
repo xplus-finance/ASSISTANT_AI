@@ -1,276 +1,210 @@
-# Paso a Paso — Poner en Marcha tu Asistente Personal IA
+# Paso a Paso -- Poner en Marcha tu Asistente Personal IA
 
-## Estado actual
-- ✅ Código completo (60 archivos, 11,000+ líneas)
-- ✅ Dependencias Python instaladas
-- ✅ Archivo .env creado (falta rellenarlo)
-- ⏳ Falta: configurar al menos un canal de mensajería
+## Que necesitas
+
+- Una computadora con Windows 10+, Linux (Ubuntu, Debian, Fedora, Arch) o macOS
+- Python 3.12 o superior
+- Una suscripcion activa de Claude Pro o Max (para Claude Code CLI)
+- Una cuenta de Telegram (recomendado) o WhatsApp (ver opciones abajo)
 
 ---
 
-## OPCIÓN 1: WhatsApp con Baileys (número virtual)
+## Instalacion
 
-### Lo que necesitas:
-- Un número de teléfono virtual/desechable (NO tu número personal)
-- Node.js 20+ instalado
+El proyecto incluye un instalador interactivo que configura todo automaticamente: dependencias del sistema, entorno de Python, canal de mensajeria, audio y seguridad.
 
-### Paso 1: Obtener un número virtual
-Opciones gratuitas:
-- **TextNow** — App gratis, te da número USA
-- **Google Voice** — Gratis con cuenta Google (solo USA)
+### Linux / macOS
 
-Opciones de pago:
-- **Twilio** — ~$1-2/mes, número de cualquier país
-- **Número prepago** — Compra un SIM barato dedicado
-
-### Paso 2: Instalar Node.js (si no lo tienes)
 ```bash
-# Verificar si ya lo tienes
-node --version
-
-# Si no lo tienes, instalar:
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt-get install -y nodejs
+cd /ruta/al/personal-ai-assistant
+bash install.sh
 ```
 
-### Paso 3: Configurar el bridge de WhatsApp
+El instalador detecta tu gestor de paquetes (apt, dnf, pacman, brew) e instala las dependencias faltantes (ffmpeg, bubblewrap) de forma automatica.
+
+### Windows
+
+```powershell
+cd C:\ruta\al\personal-ai-assistant
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+En Windows, el instalador usa `winget` para dependencias como ffmpeg y crea un archivo `start.bat` para iniciar con doble clic.
+
+### Que hace el instalador (10 pasos)
+
+1. Verifica Python 3.12+, ffmpeg y bubblewrap (sandbox de seguridad)
+2. Verifica que Claude Code CLI este instalado y autenticado
+3. Te permite elegir canal de mensajeria: Telegram, WhatsApp Baileys, WhatsApp Business API o todos
+4. Configura el canal elegido paso a paso, con validacion en vivo (verifica tokens contra la API de Telegram, envia mensaje de prueba, etc.)
+5. Crea el entorno virtual de Python
+6. Instala todas las dependencias
+7. Configura el modelo de reconocimiento de voz (Whisper) con opcion de descarga inmediata
+8. Configura zona horaria
+9. Configura seguridad: PIN opcional y clave de cifrado para la base de datos
+10. Crea directorios de datos y ofrece inicio automatico (systemd en Linux, Task Scheduler en Windows)
+
+El instalador es idempotente: puedes ejecutarlo varias veces sin problema. Si ya existe un `.env`, ofrece reconfigurarlo con backup automatico.
+
+---
+
+## Primer arranque
+
+### Linux / macOS
+
 ```bash
-cd /home/orlando/Desktop/XPlus-Finance/ASSISTANT_AI/personal-ai-assistant/whatsapp-bridge
-npm install
-```
-
-### Paso 4: Iniciar el bridge y escanear QR
-```bash
-npm start
-```
-- Aparecerá un código QR en la terminal
-- Abre WhatsApp en el teléfono del número virtual
-- Ve a Configuración → Dispositivos vinculados → Vincular dispositivo
-- Escanea el QR
-- Espera a que diga "Connected!"
-
-### Paso 5: Obtener tu chat_id de WhatsApp
-- Envía un mensaje desde TU WhatsApp personal al número virtual
-- En la terminal del bridge verás algo como: `Message from: 1234567890`
-- Ese número (sin el @s.whatsapp.net) es tu AUTHORIZED_PHONE
-
-### Paso 6: Configurar .env
-Edita el archivo .env:
-```bash
-nano /home/orlando/Desktop/XPlus-Finance/ASSISTANT_AI/personal-ai-assistant/.env
-```
-
-Cambiar/agregar estas líneas:
-```
-# WhatsApp Baileys
-WHATSAPP_BAILEYS_ENABLED=true
-WHATSAPP_BAILEYS_BRIDGE_URL=http://127.0.0.1:3001
-AUTHORIZED_PHONE=TU_NUMERO_PERSONAL_SIN_PLUS  # ej: 12345678901
-
-# DB encryption (ya generada)
-DB_ENCRYPTION_KEY=2eff35c6f7939cc59280d17ccd7390c8e5a91a3885cbe91b636936d1868cbfce
-
-# Timezone (ajustar a tu zona)
-TIMEZONE=America/New_York
-```
-
-### Paso 7: Arrancar el asistente
-```bash
-# Terminal 1: Bridge de WhatsApp (si no está corriendo)
-cd /home/orlando/Desktop/XPlus-Finance/ASSISTANT_AI/personal-ai-assistant/whatsapp-bridge
-npm start
-
-# Terminal 2: Asistente Python
-cd /home/orlando/Desktop/XPlus-Finance/ASSISTANT_AI/personal-ai-assistant
+cd /ruta/al/personal-ai-assistant
 source .venv/bin/activate
 python -m src.main
 ```
 
-### Paso 8: Probar
-- Envía "hola" desde tu WhatsApp personal al número virtual
-- El asistente debería iniciar el onboarding
+### Windows
 
-### ⚠️ Si te banean el número virtual:
-1. Para el bridge (Ctrl+C)
-2. Borra la sesión: `rm -rf whatsapp-bridge/auth_info/`
-3. Consigue otro número virtual
-4. Repite desde el paso 4
+Doble clic en `start.bat` o desde PowerShell:
+
+```powershell
+.venv\Scripts\python.exe -m src.main
+```
+
+El `start.bat` en Windows hace `git pull` automatico al arrancar para mantener el codigo actualizado.
 
 ---
 
-## OPCIÓN 2: WhatsApp Business API (oficial, sin riesgo)
+## Primer mensaje (onboarding)
 
-### Lo que necesitas:
-- Cuenta de Meta for Developers
-- Cuenta de Meta Business Manager (verificación puede tomar días)
-- Número virtual (Twilio ~$2/mes)
-- Cloudflare Tunnel (gratis) para recibir webhooks
+La primera vez que hables con el bot por Telegram (o WhatsApp), se activa el asistente de configuracion inicial:
 
-### Paso 1: Crear cuenta en Meta for Developers
-1. Ve a https://developers.facebook.com
-2. Inicia sesión con tu cuenta de Facebook
-3. Acepta los términos de desarrollador
+1. Te pregunta como quieres que se llame el asistente
+2. Te pregunta tu nombre
+3. Te pregunta tu area de trabajo o intereses
+4. Te pregunta tus preferencias de comunicacion (texto/audio, formal/informal)
+5. Te pregunta la zona horaria (si no la configuraste en la instalacion)
+6. Opcion de configurar un PIN de seguridad
 
-### Paso 2: Crear app de Business
-1. Click "Crear app"
-2. Seleccionar "Business" como tipo
-3. Dar nombre a la app
-4. Seleccionar o crear una cuenta de Business
-
-### Paso 3: Agregar WhatsApp
-1. En el dashboard de la app, click "Agregar producto"
-2. Seleccionar "WhatsApp"
-3. Click "Configurar"
-
-### Paso 4: Obtener credenciales
-Del dashboard de WhatsApp obtendrás:
-- **Phone Number ID** — ID del número de teléfono
-- **Access Token** — Token temporal (generar uno permanente después)
-- **Verify Token** — Lo defines tú (cualquier string secreto)
-
-### Paso 5: Configurar número de teléfono
-- Puedes usar el número de prueba que Meta te da gratis
-- O agregar tu número virtual de Twilio
-
-### Paso 6: Instalar Cloudflare Tunnel
-```bash
-# Descargar cloudflared
-curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared
-chmod +x /usr/local/bin/cloudflared
-
-# Crear tunnel (te da una URL pública temporal)
-cloudflared tunnel --url http://localhost:8443
-```
-
-### Paso 7: Configurar webhook en Meta
-1. En el dashboard de WhatsApp → Configuración → Webhook
-2. URL del callback: `https://TU-URL-DE-CLOUDFLARE/webhook`
-3. Verify token: el que definiste tú
-4. Suscribirse a: messages
-
-### Paso 8: Configurar .env
-```
-WHATSAPP_BUSINESS_ENABLED=true
-WHATSAPP_PHONE_NUMBER_ID=tu_phone_number_id
-WHATSAPP_ACCESS_TOKEN=tu_access_token
-WHATSAPP_VERIFY_TOKEN=tu_verify_token
-WHATSAPP_WEBHOOK_SECRET=tu_app_secret
-AUTHORIZED_PHONE=tu_numero_personal
-```
-
-### Paso 9: Arrancar
-```bash
-# Terminal 1: Cloudflare Tunnel
-cloudflared tunnel --url http://localhost:8443
-
-# Terminal 2: Asistente
-cd /home/orlando/Desktop/XPlus-Finance/ASSISTANT_AI/personal-ai-assistant
-source .venv/bin/activate
-python -m src.main
-```
-
-### Costos:
-- Mensajes de servicio (cuando TÚ le escribes): **GRATIS**
-- Número virtual Twilio: ~$2/mes
-- Cloudflare Tunnel: **GRATIS**
+Despues del onboarding, el asistente esta listo para usar.
 
 ---
 
-## OPCIÓN 3: Telegram (la más fácil y segura)
+## Canales de mensajeria disponibles
 
-### Lo que necesitas:
-- Cuenta de Telegram (gratis)
-- 5 minutos
+### Telegram (recomendado)
 
-### Paso 1: Crear el bot
-1. Abre Telegram en tu teléfono o desktop
-2. Busca **@BotFather**
-3. Envía `/newbot`
-4. Elige nombre: `Mi Asistente IA` (o el que quieras)
-5. Elige username: `mi_asistente_ia_bot` (debe terminar en _bot)
-6. **BotFather te da un token** — cópialo, es algo como:
-   `7123456789:AAH1bGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9`
+La opcion mas rapida y segura. Gratis, sin riesgo de ban. Se configura en 2 minutos durante la instalacion. Guia completa: [TELEGRAM_SETUP.md](TELEGRAM_SETUP.md)
 
-### Paso 2: Obtener tu Chat ID
-1. Busca **@userinfobot** en Telegram
-2. Envíale cualquier mensaje (ej: "hola")
-3. Te responde con tu **Chat ID** — es un número como: `987654321`
+### WhatsApp con Baileys (no oficial)
 
-### Paso 3: Configurar .env
-```bash
-nano /home/orlando/Desktop/XPlus-Finance/ASSISTANT_AI/personal-ai-assistant/.env
-```
+Usa ingenieria inversa del protocolo de WhatsApp Web. Requiere un numero virtual desechable. Riesgo medio de ban del numero. Guia completa: [WHATSAPP_BAILEYS_SETUP.md](WHATSAPP_BAILEYS_SETUP.md)
 
-Rellenar:
-```
-TELEGRAM_BOT_TOKEN=7123456789:AAH1bGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
-AUTHORIZED_CHAT_ID=987654321
-DB_ENCRYPTION_KEY=2eff35c6f7939cc59280d17ccd7390c8e5a91a3885cbe91b636936d1868cbfce
-TIMEZONE=America/New_York
-```
+### WhatsApp Business API (oficial)
 
-### Paso 4: Arrancar
-```bash
-cd /home/orlando/Desktop/XPlus-Finance/ASSISTANT_AI/personal-ai-assistant
-source .venv/bin/activate
-python -m src.main
-```
-
-### Paso 5: Probar
-1. Abre tu bot en Telegram (búscalo por el username que elegiste)
-2. Envía "hola"
-3. El asistente inicia el onboarding automáticamente
+API oficial de Meta, cero riesgo de ban. Requiere cuenta de negocio verificada y Cloudflare Tunnel. Guia completa: [WHATSAPP_BUSINESS_SETUP.md](WHATSAPP_BUSINESS_SETUP.md)
 
 ---
 
-## DESPUÉS DE CONFIGURAR CUALQUIER CANAL
+## Capacidades del asistente
 
-### El onboarding
-La primera vez que envíes un mensaje, el asistente te preguntará:
-1. ¿Cómo quieres que se llame?
-2. ¿Cómo te llamo a ti?
-3. ¿En qué área trabajas?
-4. ¿Cómo prefieres comunicarte? (texto/audio, formal/informal)
-5. ¿Zona horaria?
-6. ¿PIN de seguridad? (opcional)
+### Comandos principales
 
-### Comandos disponibles después del onboarding:
 ```
-INFORMACIÓN
-!status          — estado del asistente
-!yo              — tu perfil como lo ve el asistente
-!memoria         — qué recuerda de ti
-!recuerda [algo] — guardar en memoria
+INFORMACION
+!status          -- estado del asistente y sus modulos
+!yo              -- tu perfil como lo ve el asistente
+!memoria         -- que recuerda de ti
+!recuerda [algo] -- guardar algo en memoria permanente
 
 TAREAS
-!tareas          — ver todas
-!tarea nueva [X] — crear tarea
+!tareas          -- ver todas las tareas
+!tarea nueva [X] -- crear tarea
 
 AUDIO
-!voz on          — responder siempre con audio
-!voz off         — responder siempre con texto
-!voz auto        — automático
+!voz on          -- responder siempre con audio
+!voz off         -- responder siempre con texto
+!voz auto        -- el asistente decide segun el contexto
 
 SKILLS
-!skills          — ver skills disponibles
-!skill nueva     — crear nueva skill
+!skills          -- ver skills disponibles
+!skill crear     -- crear una nueva skill en tiempo de ejecucion
+
+MCP
+!mcp crear       -- crear un servidor MCP, instalarlo y registrarlo automaticamente
 
 APRENDIZAJE
-!busca [tema]    — buscar en web y aprender
+!busca [tema]    -- buscar en la web y almacenar en base de conocimiento
 
 SISTEMA
-!cmd [comando]   — ejecutar comando en terminal
-!logs            — ver últimos comandos
+!cmd [comando]   -- ejecutar comando en terminal (con sandbox de seguridad)
+!logs            -- ver ultimos comandos ejecutados
 ```
 
-### Para dejar el asistente corriendo 24/7:
+### Audio
+
+- Transcripcion de voz con faster-whisper (procesamiento 100% local, nada se envia a terceros)
+- Modelos disponibles: tiny (75 MB), small (500 MB), medium (1.5 GB), large-v3 (3 GB)
+- Sintesis de voz (TTS) con multiples motores: chatterbox, piper, gTTS, espeak, pyttsx3 (Windows)
+- Control de voz por lenguaje natural: cambiar tono (grave/agudo), velocidad y genero
+
+### Seguridad (8 capas)
+
+1. Autenticacion por Chat ID de Telegram o numero autorizado de WhatsApp
+2. PIN de seguridad con hash bcrypt para operaciones sensibles
+3. Sanitizacion de entrada (validacion de comandos contra lista negra)
+4. Deteccion de inyeccion de prompts
+5. Escaneo de salida (previene filtracion de datos sensibles)
+6. Rate limiting (limite de mensajes por minuto)
+7. Permisos de archivos endurecidos automaticamente en cada arranque (Linux/macOS)
+8. Ejecucion en sandbox con bubblewrap (Linux) o subprocess con timeout (Windows/macOS)
+
+### Auto-evolucion
+
+- Hot-reload: el asistente detecta cambios en su propio codigo y recarga modulos en caliente
+- Los modulos utilitarios y de skills se recargan sin reiniciar
+- Los modulos core (gateway, bridge, seguridad) activan un reinicio completo del proceso
+- Validacion de sintaxis con `ast.parse()` antes de aplicar cualquier cambio
+- Backup automatico de modulos antes de reemplazarlos
+
+### Skills en tiempo de ejecucion
+
+Con `!skill crear`, el asistente genera nuevas habilidades usando Claude, las valida, las guarda en el directorio `skills/` y las carga sin reiniciar. Las skills personalizadas persisten entre reinicios.
+
+### Servidores MCP
+
+Con `!mcp crear`, el asistente puede generar servidores MCP (Model Context Protocol) completos con FastMCP, instalarlos en `mcps/` y registrarlos automaticamente en la configuracion de Claude Code.
+
+### Control de escritorio
+
+- Capturas de pantalla (scrot en Linux, screencapture en macOS, pyautogui en Windows)
+- Gestion de ventanas (xdotool/wmctrl en Linux, osascript en macOS, pyautogui en Windows)
+- Escaneo de pestanas del navegador
+- Escritura en teclado
+
+### Base de datos
+
+- APSW (driver SQLite avanzado) con cifrado opcional via SQLCipher (AES-256)
+- La clave de cifrado se genera automaticamente durante la instalacion
+- Todos los datos (conversaciones, memoria, tareas) se almacenan localmente
+
+---
+
+## Ejecucion 24/7
+
+### Linux (systemd)
+
 ```bash
-# Opción 1: Usar systemd (recomendado para producción)
 sudo cp systemd/ai-assistant.service /etc/systemd/system/
 sudo systemctl enable ai-assistant
 sudo systemctl start ai-assistant
 
-# Opción 2: Usar tmux (rápido para probar)
+# Ver logs en vivo
+journalctl -u ai-assistant -f
+```
+
+### Windows (Task Scheduler)
+
+El instalador puede configurar una tarea programada que inicia el asistente al abrir sesion. Tambien puedes usar `start.bat` o `start_hidden.vbs` (sin ventana de consola).
+
+### Alternativa rapida (tmux/screen)
+
+```bash
 tmux new -s asistente
 source .venv/bin/activate
 python -m src.main
@@ -280,40 +214,66 @@ python -m src.main
 
 ---
 
-## SOLUCIÓN DE PROBLEMAS
+## Solucion de problemas
 
-### "No se puede conectar a Claude CLI"
+### "Claude Code CLI no encontrado"
+
 ```bash
-claude --version  # ¿Está instalado?
-claude auth login # ¿Está autenticado?
+# Verificar instalacion
+claude --version
+
+# Si no esta instalado
+npm install -g @anthropic-ai/claude-code
+
+# Autenticarse (abre el navegador)
+claude
 ```
 
 ### "El bot no responde en Telegram"
-1. Verifica el token en .env
-2. Verifica el chat_id en .env
-3. Mira los logs: `tail -f logs/app.log`
+
+1. Verifica que el token y el chat_id en `.env` son correctos
+2. Verifica que el proceso esta corriendo
+3. Revisa los logs: `tail -f logs/app.log`
+4. Asegurate de haber enviado `/start` al bot al menos una vez
 
 ### "Error de base de datos"
+
 ```bash
-# Si la DB está corrupta, borrarla y empezar de nuevo
+# Si la DB esta corrupta, borrarla y empezar de nuevo
+# (se pierde la memoria del asistente pero se regenera)
 rm data/assistant.db
-python -m src.main  # Crea una nueva automáticamente
+python -m src.main
 ```
 
-### "El bridge de WhatsApp no conecta"
+### "faster-whisper da error"
+
 ```bash
-# Verificar que el bridge está corriendo
+source .venv/bin/activate
+python -c "from faster_whisper import WhisperModel; WhisperModel('small')"
+```
+
+Si usas GPU NVIDIA con CUDA, faster-whisper la detecta y la usa automaticamente. Sin GPU funciona con CPU (mas lento pero operativo).
+
+### "El bridge de WhatsApp no conecta"
+
+```bash
 curl http://127.0.0.1:3001/health
 
-# Si dice "disconnected", escanear QR de nuevo
+# Si dice "disconnected", borrar sesion y re-escanear QR
 cd whatsapp-bridge
 rm -rf auth_info/
 npm start
 ```
 
-### "faster-whisper da error de modelo"
+### Permisos en Linux/macOS
+
+El asistente endurece permisos automaticamente al arrancar:
+- `data/` y `logs/`: modo 700 (solo el propietario)
+- `.env`: modo 600 (solo lectura/escritura del propietario)
+
+Si tienes problemas de permisos, ejecuta:
+
 ```bash
-# Descargar modelo manualmente
-source .venv/bin/activate
-python -c "from faster_whisper import WhisperModel; WhisperModel('medium')"
+chmod 700 data/ logs/
+chmod 600 .env
 ```

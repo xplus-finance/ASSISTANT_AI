@@ -62,7 +62,8 @@ def convert_ogg_to_wav(
     if not ensure_ffmpeg():
         raise RuntimeError(
             "ffmpeg is not installed. Install it with: "
-            "winget install ffmpeg (Windows) or sudo apt install ffmpeg (Linux)"
+            "winget install ffmpeg (Windows), brew install ffmpeg (macOS), "
+            "or sudo apt install ffmpeg (Linux)"
         )
 
     if output_path is None:
@@ -127,7 +128,8 @@ def convert_wav_to_ogg(
     if not ensure_ffmpeg():
         raise RuntimeError(
             "ffmpeg is not installed. Install it with: "
-            "winget install ffmpeg (Windows) or sudo apt install ffmpeg (Linux)"
+            "winget install ffmpeg (Windows), brew install ffmpeg (macOS), "
+            "or sudo apt install ffmpeg (Linux)"
         )
 
     if output_path is None:

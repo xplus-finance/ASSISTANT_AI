@@ -1,10 +1,4 @@
-"""
-Sandboxed command execution using bubblewrap (bwrap).
-
-Provides a secure execution environment with namespace isolation,
-read-only filesystem binds, and controlled network access.
-Falls back to plain subprocess with timeout if bwrap is not installed.
-"""
+"""Sandboxed command execution using bubblewrap (bwrap)."""
 
 from __future__ import annotations
 
@@ -16,12 +10,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src.utils.logger import get_app_logger, get_security_logger
-from src.utils.platform import IS_WINDOWS, SHELL_CMD, TEMP_DIR, DEFAULT_PATH_ENV, DEFAULT_HOME_ENV
+from src.utils.platform import IS_WINDOWS, IS_MACOS, SHELL_CMD, TEMP_DIR, DEFAULT_PATH_ENV, DEFAULT_HOME_ENV
 
 
 @dataclass(frozen=True)
 class ExecutionResult:
-    """Result of a sandboxed command execution."""
     stdout: str
     stderr: str
     returncode: int
@@ -30,12 +23,10 @@ class ExecutionResult:
 
     @property
     def success(self) -> bool:
-        """True if command exited with code 0 and did not time out."""
         return self.returncode == 0 and not self.timed_out
 
     @property
     def output(self) -> str:
-        """Combined stdout + stderr for convenience."""
         parts = []
         if self.stdout:
             parts.append(self.stdout)
@@ -45,11 +36,9 @@ class ExecutionResult:
 
 
 class SandboxedExecutor:
-    """Execute shell commands inside a bubblewrap (bwrap) sandbox with
-    namespace isolation and controlled filesystem/network access.
+    """Execute shell commands inside a bubblewrap sandbox.
     Falls back to subprocess with timeout if bwrap is unavailable."""
 
-    # Maximum output size to capture (prevent OOM on pathological commands)
     MAX_OUTPUT_BYTES = 1024 * 1024  # 1 MB
 
     def __init__(self) -> None:
@@ -58,12 +47,16 @@ class SandboxedExecutor:
         self._bwrap_path = None if IS_WINDOWS else shutil.which("bwrap")
 
         if self._bwrap_path is None and not IS_WINDOWS:
+            install_hint = (
+                "brew install bubblewrap" if IS_MACOS
+                else "sudo apt install bubblewrap"
+            )
             self._log.warning(
                 "bwrap_not_found",
                 message=(
                     "bubblewrap (bwrap) is not installed. "
                     "Commands will run WITHOUT sandboxing. "
-                    "Install with: sudo apt install bubblewrap"
+                    f"Install with: {install_hint}"
                 ),
             )
         elif IS_WINDOWS:
@@ -74,7 +67,6 @@ class SandboxedExecutor:
 
     @property
     def sandbox_available(self) -> bool:
-        """True if bubblewrap is installed and usable."""
         return self._bwrap_path is not None
 
     def execute(
@@ -84,21 +76,6 @@ class SandboxedExecutor:
         timeout: int = 30,
         allow_network: bool = False,
     ) -> ExecutionResult:
-        """
-        Execute a command, sandboxed if possible.
-
-        Args:
-            command: Shell command to execute.
-            workspace: Directory that will be writable inside the sandbox.
-                       Mapped to /workspace inside bwrap.
-            timeout: Maximum execution time in seconds.
-            allow_network: If True, share the host network namespace.
-                           If False (default), the command has no network access.
-
-        Returns:
-            ExecutionResult with stdout, stderr, return code, and status flags.
-        """
-        # Ensure workspace exists
         ws_path = Path(workspace)
         ws_path.mkdir(parents=True, exist_ok=True)
 
@@ -114,42 +91,31 @@ class SandboxedExecutor:
         timeout: int,
         allow_network: bool,
     ) -> ExecutionResult:
-        """Execute command inside bubblewrap sandbox."""
-
         bwrap_args = [
             self._bwrap_path,
-            # ── Namespace isolation ──
             "--unshare-all",
-            # ── Filesystems ──
             "--tmpfs", "/tmp",
             "--dev", "/dev",
             "--proc", "/proc",
-            # ── Read-only system binds ──
             "--ro-bind", "/usr", "/usr",
             "--ro-bind", "/bin", "/bin",
             "--ro-bind", "/lib", "/lib",
             "--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf",
             "--ro-bind", "/etc/ssl/certs", "/etc/ssl/certs",
-            # ── Writable workspace ──
             "--bind", workspace, "/workspace",
-            # ── Security ──
             "--die-with-parent",
             "--new-session",
         ]
 
-        # /lib64 may not exist on all systems (e.g., some ARM builds)
         if Path("/lib64").exists():
             bwrap_args.extend(["--ro-bind", "/lib64", "/lib64"])
 
-        # /etc/alternatives is needed for some distros to resolve symlinks
         if Path("/etc/alternatives").exists():
             bwrap_args.extend(["--ro-bind", "/etc/alternatives", "/etc/alternatives"])
 
-        # Network access
         if allow_network:
             bwrap_args.append("--share-net")
 
-        # The actual command to run inside the sandbox
         bwrap_args.extend([
             "/bin/sh", "-c",
             f"cd /workspace && {command}",
@@ -171,7 +137,6 @@ class SandboxedExecutor:
         workspace: str,
         timeout: int,
     ) -> ExecutionResult:
-        """Execute command with subprocess.run (no sandbox)."""
         self._sec_log.warning(
             "unsandboxed_execution",
             command=command[:200],
@@ -179,7 +144,6 @@ class SandboxedExecutor:
         )
 
         if IS_WINDOWS:
-            # On Windows use cmd /c with cd
             args = [*SHELL_CMD, f"cd /d {workspace} && {command}"]
         else:
             args = [*SHELL_CMD, f"cd {workspace} && {command}"]
@@ -191,17 +155,6 @@ class SandboxedExecutor:
         timeout: int,
         sandboxed: bool,
     ) -> ExecutionResult:
-        """
-        Run a subprocess with timeout and output capture.
-
-        Args:
-            args: Command arguments list.
-            timeout: Timeout in seconds.
-            sandboxed: Whether this execution is sandboxed (for the result flag).
-
-        Returns:
-            ExecutionResult.
-        """
         timed_out = False
         start = time.monotonic()
 
@@ -210,7 +163,6 @@ class SandboxedExecutor:
                 args,
                 capture_output=True,
                 timeout=timeout,
-                # Don't inherit environment inside sandbox
                 env={"PATH": DEFAULT_PATH_ENV, "HOME": DEFAULT_HOME_ENV, "LANG": "C.UTF-8"},
             )
             stdout = proc.stdout.decode("utf-8", errors="replace")[:self.MAX_OUTPUT_BYTES]

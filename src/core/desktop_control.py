@@ -8,6 +8,7 @@ Allows the assistant to interact with the user's desktop:
 - Send messages to other Claude Code instances
 
 On Linux: uses standard tools (xdotool, wmctrl, scrot, xclip).
+On macOS: uses native screencapture and osascript (AppleScript).
 On Windows: uses pyautogui, pyperclip, and PowerShell.
 """
 
@@ -20,7 +21,7 @@ from typing import Any
 
 import structlog
 
-from src.utils.platform import IS_WINDOWS
+from src.utils.platform import IS_MACOS, IS_WINDOWS
 
 log = structlog.get_logger("assistant.desktop_control")
 
@@ -39,6 +40,8 @@ class DesktopControl:
 
         if IS_WINDOWS:
             return await self._screenshot_windows(output)
+        elif IS_MACOS:
+            return await self._screenshot_macos(output)
         return await self._screenshot_linux(output)
 
     async def _screenshot_linux(self, output: str) -> str:
@@ -61,6 +64,21 @@ class DesktopControl:
 
         raise RuntimeError(
             "No screenshot tool available. Install one: sudo apt install scrot"
+        )
+
+    async def _screenshot_macos(self, output: str) -> str:
+        """macOS screenshot using native screencapture."""
+        proc = await asyncio.create_subprocess_exec(
+            "screencapture", "-x", output,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await asyncio.wait_for(proc.communicate(), timeout=10)
+        if proc.returncode == 0 and Path(output).exists():
+            log.info("desktop.screenshot", tool="screencapture", path=output)
+            return output
+        raise RuntimeError(
+            "screencapture failed. This is a built-in macOS tool and should always be available."
         )
 
     async def _screenshot_windows(self, output: str) -> str:
@@ -88,13 +106,22 @@ class DesktopControl:
         )
 
     async def type_text(self, text: str, delay_ms: int = 50) -> None:
-        """Type text using xdotool (Linux) or pyautogui (Windows)."""
+        """Type text using xdotool (Linux), osascript (macOS), or pyautogui (Windows)."""
         if IS_WINDOWS:
             self._require_module("pyautogui")
             import pyautogui
             await asyncio.to_thread(
                 pyautogui.typewrite, text, interval=delay_ms / 1000.0
             )
+        elif IS_MACOS:
+            escaped = text.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
+            script = f'tell application "System Events" to keystroke "{escaped}"'
+            proc = await asyncio.create_subprocess_exec(
+                "osascript", "-e", script,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            await asyncio.wait_for(proc.communicate(), timeout=30)
         else:
             self._require("xdotool")
             proc = await asyncio.create_subprocess_exec(
@@ -115,6 +142,40 @@ class DesktopControl:
             self._require_module("pyautogui")
             import pyautogui
             await asyncio.to_thread(pyautogui.hotkey, *keys)
+        elif IS_MACOS:
+            # Map key names to AppleScript key code using modifiers
+            # osascript: keystroke "t" using {command down, shift down}
+            modifier_map = {
+                "ctrl": "command down",  # macOS convention: Ctrl → Cmd
+                "alt": "option down",
+                "shift": "shift down",
+                "super": "command down",
+                "command": "command down",
+                "cmd": "command down",
+                "option": "option down",
+            }
+            modifiers = []
+            keystroke = None
+            for k in keys:
+                lower = k.lower()
+                if lower in modifier_map:
+                    mod = modifier_map[lower]
+                    if mod not in modifiers:
+                        modifiers.append(mod)
+                else:
+                    keystroke = k
+            if keystroke:
+                if modifiers:
+                    mods = ", ".join(modifiers)
+                    script = f'tell application "System Events" to keystroke "{keystroke}" using {{{mods}}}'
+                else:
+                    script = f'tell application "System Events" to keystroke "{keystroke}"'
+                proc = await asyncio.create_subprocess_exec(
+                    "osascript", "-e", script,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                await asyncio.wait_for(proc.communicate(), timeout=10)
         else:
             self._require("xdotool")
             combo = "+".join(keys)
@@ -130,6 +191,8 @@ class DesktopControl:
         """List all open windows."""
         if IS_WINDOWS:
             return await self._list_windows_windows()
+        elif IS_MACOS:
+            return await self._list_windows_macos()
         return await self._list_windows_linux()
 
     async def _list_windows_linux(self) -> list[dict]:
@@ -154,6 +217,31 @@ class DesktopControl:
                     "host": parts[2],
                     "title": parts[3],
                 })
+        return windows
+
+    async def _list_windows_macos(self) -> list[dict]:
+        """List visible applications via osascript."""
+        script = 'tell application "System Events" to get name of every process whose visible is true'
+        proc = await asyncio.create_subprocess_exec(
+            "osascript", "-e", script,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+
+        windows = []
+        output = stdout.decode().strip()
+        if output:
+            # osascript returns comma-separated list: "Finder, Safari, Terminal"
+            for i, name in enumerate(output.split(", ")):
+                name = name.strip()
+                if name:
+                    windows.append({
+                        "id": str(i),
+                        "desktop": "0",
+                        "host": "localhost",
+                        "title": name,
+                    })
         return windows
 
     async def _list_windows_windows(self) -> list[dict]:
@@ -188,6 +276,8 @@ class DesktopControl:
         """Bring a window to front by ID or title match."""
         if IS_WINDOWS:
             return await self._focus_window_windows(window_id, title_match)
+        elif IS_MACOS:
+            return await self._focus_window_macos(window_id, title_match)
         return await self._focus_window_linux(window_id, title_match)
 
     async def _focus_window_linux(self, window_id: str, title_match: str) -> bool:
@@ -201,6 +291,36 @@ class DesktopControl:
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await asyncio.wait_for(proc.communicate(), timeout=10)
+        log.info("desktop.focus_window", id=window_id, title=title_match)
+        return proc.returncode == 0
+
+    async def _focus_window_macos(self, window_id: str, title_match: str) -> bool:
+        """Focus window via osascript on macOS.
+
+        On macOS, window_id from _list_windows_macos is just an index,
+        so title_match (app name) is preferred.
+        """
+        app_name = title_match if title_match else None
+
+        # If window_id provided, resolve it to an app name from the window list
+        if not app_name and window_id:
+            windows = await self._list_windows_macos()
+            for w in windows:
+                if w["id"] == window_id:
+                    app_name = w["title"]
+                    break
+
+        if not app_name:
+            return False
+
+        escaped = app_name.replace('"', '\\"')
+        script = f'tell application "{escaped}" to activate'
+        proc = await asyncio.create_subprocess_exec(
+            "osascript", "-e", script,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -292,6 +412,8 @@ class DesktopControl:
         """
         if IS_WINDOWS:
             get_title_cmd = None  # use PowerShell fallback
+        elif IS_MACOS:
+            pass  # osascript is always available
         else:
             if not shutil.which("xdotool"):
                 raise RuntimeError("xdotool no instalado. Ejecuta: sudo apt install xdotool")
@@ -311,6 +433,22 @@ class DesktopControl:
                 try:
                     proc = await asyncio.create_subprocess_exec(
                         "powershell", "-Command", ps,
+                        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+                    )
+                    out, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+                    return out.decode().strip()
+                except Exception:
+                    return ""
+            elif IS_MACOS:
+                script = (
+                    'tell application "System Events"\n'
+                    '    set frontApp to name of first application process whose frontmost is true\n'
+                    '    return frontApp\n'
+                    'end tell'
+                )
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        "osascript", "-e", script,
                         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
                     )
                     out, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
@@ -387,7 +525,19 @@ class DesktopControl:
             log.warning("desktop.claude_window_not_found", search=window_title)
             return False
 
-        if not IS_WINDOWS:
+        if IS_MACOS:
+            # Save current frontmost app name to return to it later
+            script = (
+                'tell application "System Events" to get name of first '
+                'application process whose frontmost is true'
+            )
+            proc = await asyncio.create_subprocess_exec(
+                "osascript", "-e", script,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            )
+            out, _ = await proc.communicate()
+            current_window = out.decode().strip() or None
+        elif not IS_WINDOWS:
             self._require("xdotool")
             # Save current active window to return to it later
             current_proc = await asyncio.create_subprocess_exec(
@@ -410,9 +560,15 @@ class DesktopControl:
 
         log.info("desktop.sent_to_claude", message_length=len(message), window=target["title"])
 
-        # Return to previous window (Linux only — xdotool)
+        # Return to previous window (Linux/macOS only)
         await asyncio.sleep(0.3)
-        if current_window and not IS_WINDOWS:
+        if current_window and IS_MACOS:
+            escaped = current_window.replace('"', '\\"')
+            await asyncio.create_subprocess_exec(
+                "osascript", "-e", f'tell application "{escaped}" to activate',
+                stdout=asyncio.subprocess.PIPE,
+            )
+        elif current_window and not IS_WINDOWS:
             await asyncio.create_subprocess_exec(
                 "xdotool", "windowactivate", current_window,
                 stdout=asyncio.subprocess.PIPE,
@@ -426,6 +582,15 @@ class DesktopControl:
             self._require_module("pyperclip")
             import pyperclip
             return await asyncio.to_thread(pyperclip.paste)
+
+        if IS_MACOS:
+            proc = await asyncio.create_subprocess_exec(
+                "pbpaste",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            return stdout.decode()
 
         self._require("xclip")
         proc = await asyncio.create_subprocess_exec(
@@ -442,6 +607,17 @@ class DesktopControl:
             self._require_module("pyperclip")
             import pyperclip
             await asyncio.to_thread(pyperclip.copy, text)
+            return
+
+        if IS_MACOS:
+            proc = await asyncio.create_subprocess_exec(
+                "pbcopy",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+            )
+            proc.stdin.write(text.encode())
+            proc.stdin.close()
+            await asyncio.wait_for(proc.wait(), timeout=5)
             return
 
         self._require("xclip")
@@ -467,6 +643,12 @@ class DesktopControl:
             tools["powershell"] = shutil.which("powershell") is not None
             return tools
 
+        if IS_MACOS:
+            tools = {}
+            for tool in ["screencapture", "osascript", "pbcopy", "pbpaste"]:
+                tools[tool] = shutil.which(tool) is not None
+            return tools
+
         tools = {}
         for tool in ["xdotool", "wmctrl", "scrot", "xclip", "gnome-screenshot"]:
             tools[tool] = shutil.which(tool) is not None
@@ -489,6 +671,37 @@ class DesktopControl:
                 f"Missing Python packages: {', '.join(missing)}\n"
                 f"Install with: pip install {' '.join(missing)}"
             )
+
+        if IS_MACOS:
+            # macOS native tools (screencapture, osascript, pbcopy, pbpaste) are
+            # always available. No additional tools needed for core functionality.
+            # Optional: cliclick for advanced mouse/keyboard control.
+            optional_missing = []
+            for tool in ["cliclick"]:
+                if not shutil.which(tool):
+                    optional_missing.append(tool)
+
+            if not optional_missing:
+                return "All desktop control tools are already installed (macOS native tools included)."
+
+            if shutil.which("brew"):
+                proc = await asyncio.create_subprocess_exec(
+                    "brew", "install", *optional_missing,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+                if proc.returncode == 0:
+                    return f"Installed optional tools: {', '.join(optional_missing)}"
+                else:
+                    return f"Failed to install: {stderr.decode()[:200]}"
+            else:
+                return (
+                    "macOS native tools (screencapture, osascript, pbcopy, pbpaste) are available.\n"
+                    f"Optional tools not found: {', '.join(optional_missing)}\n"
+                    "Install Homebrew first (https://brew.sh), then: brew install "
+                    + " ".join(optional_missing)
+                )
 
         # Linux
         missing = []

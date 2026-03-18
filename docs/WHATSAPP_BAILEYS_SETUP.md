@@ -20,7 +20,7 @@
 
 ## Requisitos previos
 
-- El asistente instalado (haber ejecutado `install.sh`)
+- El asistente instalado (haber ejecutado `install.sh` en Linux/macOS o `install.ps1` en Windows)
 - Node.js 18+ instalado
 - Un numero de telefono virtual dedicado
 - Un telefono o emulador donde registrar WhatsApp con ese numero
@@ -52,24 +52,55 @@ Necesitas un numero de telefono que pueda recibir SMS para verificar WhatsApp. *
 
 ## Paso 2: Instalar Node.js
 
-Se requiere Node.js 18 o superior:
+Se requiere Node.js 18 o superior. La instalacion varia segun la plataforma:
+
+### Linux (Ubuntu/Debian)
 
 ```bash
-# Ubuntu/Debian
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
-
-# Verificar
-node --version  # v20.x.x
-npm --version   # 10.x.x
 ```
 
-Alternativa con nvm:
+### Linux (Fedora)
+
+```bash
+sudo dnf install -y nodejs
+```
+
+### Linux (Arch)
+
+```bash
+sudo pacman -S nodejs npm
+```
+
+### macOS (Homebrew)
+
+```bash
+brew install node
+```
+
+### Windows
+
+Descarga el instalador desde [nodejs.org](https://nodejs.org/) (version LTS 20+) o usa winget:
+
+```powershell
+winget install --id OpenJS.NodeJS.LTS -e
+```
+
+### Alternativa multiplataforma con nvm
+
 ```bash
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
 source ~/.bashrc
 nvm install 20
 nvm use 20
+```
+
+### Verificar
+
+```bash
+node --version  # v20.x.x
+npm --version   # 10.x.x
 ```
 
 ---
@@ -130,7 +161,11 @@ Deberia devolver:
 Edita el `.env` del proyecto principal:
 
 ```bash
+# Linux / macOS
 nano .env
+
+# Windows
+notepad .env
 ```
 
 Agrega o modifica estas lineas:
@@ -157,16 +192,23 @@ npm start
 
 ### Terminal 2: Asistente
 ```bash
+# Linux / macOS
 cd /ruta/al/personal-ai-assistant
 source .venv/bin/activate
 python -m src.main
+
+# Windows
+cd C:\ruta\al\personal-ai-assistant
+.venv\Scripts\python.exe -m src.main
 ```
 
-O si instalaste los servicios systemd:
+O si instalaste los servicios systemd (Linux):
 ```bash
 sudo systemctl start ai-assistant
 # (el bridge necesita su propio servicio systemd o ejecutarse por separado)
 ```
+
+En Windows puedes usar `start.bat` para el asistente (que ademas hace `git pull` automatico al arrancar) y dejar el bridge en una ventana de terminal aparte.
 
 ---
 
@@ -202,7 +244,7 @@ No es el fin del mundo:
 4. Reinicia el bridge (`npm start`) y escanea el QR de nuevo
 5. Actualiza el numero en `.env` si es diferente
 
-La memoria y datos del asistente **no se pierden** -- estan en la base de datos local, no en WhatsApp.
+La memoria y datos del asistente **no se pierden** -- estan en la base de datos local cifrada, no en WhatsApp.
 
 ---
 
@@ -211,7 +253,7 @@ La memoria y datos del asistente **no se pierden** -- estan en la base de datos 
 ### El QR no aparece
 - Verifica que Node.js 18+ esta instalado: `node --version`
 - Borra `auth_info/` y reinicia
-- Verifica que el puerto 3001 no esta en uso: `lsof -i :3001`
+- Verifica que el puerto 3001 no esta en uso: `lsof -i :3001` (Linux/macOS) o `netstat -ano | findstr :3001` (Windows)
 
 ### Se desconecta constantemente
 - Asegurate de que el telefono con el numero virtual tiene conexion a internet estable
@@ -222,7 +264,7 @@ La memoria y datos del asistente **no se pierden** -- estan en la base de datos 
 ### El asistente no recibe mensajes
 - Verifica que el bridge esta corriendo: `curl http://127.0.0.1:3001/health`
 - Verifica que el `WHATSAPP_BRIDGE_URL` en `.env` apunta al bridge
-- Revisa los logs: `tail -20 logs/app.log`
+- Revisa los logs: `tail -20 logs/app.log` (Linux/macOS) o abre `logs\app.log` (Windows)
 
 ### Error "Connection closed" o "Stream errored"
 - Es normal que la conexion se reinicie ocasionalmente
@@ -245,5 +287,6 @@ La memoria y datos del asistente **no se pierden** -- estan en la base de datos 
 | Requiere | Node.js, telefono | Cuenta Meta Business, Cloudflare Tunnel |
 | Estabilidad | Puede romperse | API oficial estable |
 | Ideal para | Uso personal, pruebas | Produccion |
+| Plataformas | Windows, Linux, macOS | Windows, Linux, macOS |
 
 Si el riesgo de ban te preocupa, la guia de WhatsApp Business API esta en [WHATSAPP_BUSINESS_SETUP.md](WHATSAPP_BUSINESS_SETUP.md).

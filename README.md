@@ -1,48 +1,49 @@
 <div align="center">
 
-# 🤖 Personal AI Assistant
+# Personal AI Assistant
 
-**Tu propio asistente de IA personal. Accesible desde Telegram o WhatsApp, 24/7, desde cualquier parte del mundo.**
+**Your own private AI assistant. Reachable via Telegram or WhatsApp, 24/7, from anywhere.**
 
-Construido sobre [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI — usa tu suscripción existente, sin API keys, sin costos extra por token.
+Built on [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI — runs on your existing subscription. No API keys. No per-token costs.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-green.svg)](https://python.org)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-CLI-orange.svg)](https://docs.anthropic.com/en/docs/claude-code)
 [![Windows](https://img.shields.io/badge/Windows-10+-blue.svg)](https://www.microsoft.com)
 [![Linux](https://img.shields.io/badge/Linux-Ubuntu_22.04+-orange.svg)](https://ubuntu.com)
+[![macOS](https://img.shields.io/badge/macOS-13+-lightgrey.svg)](https://apple.com)
 
-[English](#english) · [Instalación](#instalación-rápida) · [Documentación](#documentación) · [Seguridad](#seguridad--7-capas)
+[English](#english) | [Installation](#installation) | [Documentation](#documentation) | [Security](#security)
 
 ---
 
 </div>
 
-## ¿Qué es esto?
+## What is this?
 
-Un asistente de IA **personal y privado** que vive en tu servidor y se comunica contigo por Telegram o WhatsApp. No es un chatbot genérico — es **tu** asistente: recuerda todo lo que le dices, ejecuta comandos en tu máquina, busca información en la web, programa tareas, trabaja en tus proyectos de código, y aprende tus preferencias con el tiempo.
+A **private, self-hosted AI assistant** that lives on your machine and talks to you through Telegram or WhatsApp. This is not a generic chatbot — it is *your* assistant: it remembers everything, executes commands on your system, searches the web, schedules tasks, works on your code projects, and learns your preferences over time.
 
-Diseñado para un solo usuario autorizado. Nadie más puede interactuar con él. Toda la información se almacena cifrada localmente — nunca sale de tu servidor.
-
----
-
-## Características
-
-| Memoria Permanente | 7 Capas de Seguridad | Audio Bidireccional |
-|---|---|---|
-| Nunca olvida nada. Cada conversación, dato y preferencia se guarda cifrada con SQLCipher (AES-256) para siempre. | Sandbox, cifrado, anti-injection, rate limiting, validación de output, autenticación, monitoreo. | Envía y recibe notas de voz. Reconocimiento de voz local con faster-whisper. Sin conexión a internet requerida. |
-
-| Autonomía Total | Multi-Canal | Tareas Programadas |
-|---|---|---|
-| Si no tiene una herramienta, la crea. Si no sabe algo, lo busca. Resuelve problemas solo con Claude Code. | Telegram (gratis), WhatsApp Baileys, WhatsApp Business API. Tú eliges. | Programa recordatorios y tareas para cualquier fecha/hora. Se ejecutan automáticamente. |
-
-| Búsqueda Web | Terminal Segura | Gestión de Archivos |
-|---|---|---|
-| Busca en DuckDuckGo sin API key. Resume, analiza y guarda conocimiento automáticamente. | Ejecuta comandos dentro de un sandbox con bubblewrap. Acceso controlado al filesystem. | Lee, crea y procesa archivos y documentos. Trabaja en tus proyectos de código directamente. |
+Single authorized user. Nobody else can interact with it. All data stored locally — nothing leaves your machine.
 
 ---
 
-## Instalación Rápida
+## Core Capabilities
+
+| Permanent Memory | Security Hardened | Voice In/Out |
+|---|---|---|
+| Every conversation, fact, and preference stored locally with AES-256 encryption. Persistent across restarts. | Authentication, PIN verification, sandboxed execution, input sanitization, output scanning, rate limiting. | Send and receive voice notes. Local speech recognition via faster-whisper. No cloud dependency. |
+
+| Full Autonomy | Self-Evolving | Multi-Platform |
+|---|---|---|
+| If it lacks a tool, it builds one. If it doesn't know something, it researches it. Never says "I can't". | Creates its own skills, MCP servers, and scripts on the fly. Hot-reload applies changes without restart. | Windows 10+, Linux (Ubuntu/Fedora/Arch), macOS. Same codebase, same features. |
+
+| Scheduled Tasks | Web Research | Desktop Control |
+|---|---|---|
+| Program reminders and recurring tasks. They execute automatically at the specified time. | Searches DuckDuckGo without API keys. Fetches, summarizes, and stores knowledge. | Navigate browser tabs, take screenshots, type text, open applications. Cross-platform. |
+
+---
+
+## Installation
 
 ### Linux / macOS
 
@@ -52,6 +53,8 @@ cd ASSISTANT_AI
 bash install.sh
 ```
 
+Supports **apt** (Ubuntu/Debian), **brew** (macOS), **dnf** (Fedora), **pacman** (Arch).
+
 ### Windows
 
 ```powershell
@@ -60,360 +63,242 @@ cd ASSISTANT_AI
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-El instalador te guía paso a paso. No necesitas experiencia técnica.
-Tiempo estimado: **5-10 minutos**.
+Both installers are interactive, step-by-step. No technical experience required.
+Estimated time: **5-10 minutes**.
 
-> **Nota:** El instalador es idempotente — puedes ejecutarlo varias veces sin problema.
-
----
-
-## Requisitos
-
-| Requisito | Versión | Notas |
-|-----------|---------|-------|
-| **OS** | Windows 10+, Ubuntu 22.04+, macOS | Multiplataforma |
-| **Python** | 3.12+ | Con venv y pip |
-| **Claude Code CLI** | Última versión | `npm install -g @anthropic-ai/claude-code` (requiere suscripción Pro o Max) |
-| **ffmpeg** | Cualquiera | Para procesamiento de audio |
-| **bubblewrap** | Cualquiera | Sandbox para comandos (solo Linux, recomendado) |
-| **Node.js** | 18+ | Solo si usas WhatsApp Baileys |
-| **GPU con CUDA** | Opcional | Para transcripción rápida con Whisper |
-
-### Requisitos adicionales por plataforma
-
-**Windows:** `pip install pyautogui pyperclip pyttsx3` (incluido automáticamente con `install.ps1`)
-
-**Linux:** `sudo apt install xdotool wmctrl scrot xclip bubblewrap ffmpeg`
+> The installer is idempotent — safe to run multiple times.
 
 ---
 
-## Canales Disponibles
+## Requirements
 
-| Canal | Costo | Riesgo de ban | Tiempo de setup | Audio | Recomendado |
-|---|---|---|---|---|---|
-| **Telegram** | Gratis | 0% | 2 min | ✅ | ⭐ Empezar aquí |
-| **WhatsApp Baileys** | ~$2/mes | Medio | 15 min | ✅ | Para uso casual |
-| **WhatsApp Business API** | ~$5-20/mes | 0% | 1-2 hrs | ✅ | Para uso profesional |
+| Requirement | Version | Notes |
+|-------------|---------|-------|
+| **OS** | Windows 10+, Linux, macOS | Cross-platform |
+| **Python** | 3.12+ | With venv and pip |
+| **Claude Code CLI** | Latest | `npm install -g @anthropic-ai/claude-code` (requires Pro or Max subscription) |
+| **ffmpeg** | Any | Audio processing (auto-installed by installer) |
+| **Node.js** | 18+ | Only for WhatsApp Baileys channel |
+| **CUDA GPU** | Optional | Faster Whisper transcription |
 
-**Recomendación:** Empieza con Telegram. Es gratis, sin riesgo, y se configura en minutos.
-
-Guías detalladas:
-- [Telegram Setup](docs/TELEGRAM_SETUP.md)
-- [WhatsApp Baileys Setup](docs/WHATSAPP_BAILEYS_SETUP.md)
-- [WhatsApp Business API Setup](docs/WHATSAPP_BUSINESS_SETUP.md)
-- [Guía paso a paso completa](docs/PASO_A_PASO.md)
+Platform-specific packages are handled automatically by the installer.
 
 ---
 
-## Comandos
+## Channels
 
-El asistente entiende **lenguaje natural**, pero también reconoce comandos directos:
+| Channel | Cost | Ban Risk | Setup Time | Recommended |
+|---------|------|----------|------------|-------------|
+| **Telegram** | Free | None | 2 min | Start here |
+| **WhatsApp Baileys** | ~$2/mo | Medium | 15 min | Casual use |
+| **WhatsApp Business API** | ~$5-20/mo | None | 1-2 hrs | Production |
 
-### Información y Estado
-
-| Comando | Descripción |
-|---------|-------------|
-| `!status` | Estado del sistema, uptime, uso de memoria |
-| `!yo` | Tu perfil: preferencias aprendidas, estadísticas |
-| `!help` | Lista de todos los comandos disponibles |
-
-### Memoria y Conocimiento
-
-| Comando | Descripción |
-|---------|-------------|
-| `!memoria` | Ver memorias almacenadas (últimas 10) |
-| `!memoria buscar <texto>` | Buscar en memorias |
-| `!recuerda <texto>` | Guardar algo en memoria permanente |
-| `!olvida <id>` | Eliminar una memoria específica |
-| `recuerda que [dato]` | Guardar con lenguaje natural |
-| `qué sabes sobre [tema]` | Consultar la memoria |
-
-### Tareas y Recordatorios
-
-| Comando | Descripción |
-|---------|-------------|
-| `!tareas` | Ver tareas pendientes |
-| `!tarea nueva <descripción>` | Crear nueva tarea |
-| `!tarea hecha <id>` | Marcar tarea como completada |
-| `!tarea eliminar <id>` | Eliminar una tarea |
-| `recuérdame [algo] a las [hora]` | Recordatorio con lenguaje natural |
-| `recuérdame [algo] cada [frecuencia]` | Recordatorio recurrente |
-
-### Búsqueda Web
-
-| Comando | Descripción |
-|---------|-------------|
-| `!busca <query>` | Buscar en la web |
-| `!resumen <url>` | Resumir contenido de una URL |
-| `busca [tema]` | Búsqueda con lenguaje natural |
-| `aprende sobre [tema]` | Búsqueda profunda con múltiples fuentes |
-
-### Terminal y Proyectos
-
-| Comando | Descripción |
-|---------|-------------|
-| `!cmd <comando>` | Ejecutar comando en sandbox seguro |
-| `!script <nombre>` | Ejecutar script predefinido |
-| `ejecuta: [comando]` | Ejecutar con lenguaje natural |
-| `trabaja en [proyecto]` | Activar Claude Code en un proyecto |
-| `claude: [instrucción]` | Instrucción directa a Claude Code |
-| `estado del sistema` | Uso de CPU, RAM, disco |
-
-### Audio
-
-| Comando | Descripción |
-|---------|-------------|
-| *(enviar nota de voz)* | Transcripción automática con faster-whisper |
-| `!voz <texto>` | Generar audio con TTS local |
-| `responde con voz` | El asistente responde con audio |
-
-### Archivos y Configuración
-
-| Comando | Descripción |
-|---------|-------------|
-| `lee el archivo [ruta]` | Muestra contenido de un archivo |
-| `crea archivo [ruta]` | Crea un archivo nuevo |
-| *(enviar documento)* | El asistente lo procesa automáticamente |
-| `!config` | Ver configuración actual |
-| `!config <clave> <valor>` | Cambiar configuración |
-| `!skills` | Ver skills disponibles |
+Start with Telegram. It's free, zero risk, and takes minutes.
 
 ---
 
-## Arquitectura
+## Commands
+
+The assistant understands **natural language**, but also accepts direct commands:
+
+### Information
+| Command | Description |
+|---------|-------------|
+| `!status` | System status, uptime, memory usage |
+| `!yo` | Your profile: learned preferences, stats |
+| `!help` | List all available commands |
+
+### Memory
+| Command | Description |
+|---------|-------------|
+| `!memoria` | View stored memories |
+| `!memoria buscar <text>` | Search memories |
+| `!recuerda <text>` | Save to permanent memory |
+
+### Tasks
+| Command | Description |
+|---------|-------------|
+| `!tareas` | View pending tasks |
+| `!tarea nueva <desc>` | Create task |
+| `recuerdame [something] a las [time]` | Natural language reminder |
+
+### Web & Learning
+| Command | Description |
+|---------|-------------|
+| `!busca <query>` | Web search |
+| `!aprende <url>` | Fetch and learn from URL |
+
+### Terminal & Files
+| Command | Description |
+|---------|-------------|
+| `!cmd <command>` | Execute in sandbox |
+| `!screenshot` | Take and send screenshot |
+| `lee el archivo [path]` | Read file contents |
+
+### Skills & MCP
+| Command | Description |
+|---------|-------------|
+| `!skills` | List available skills |
+| `!skill crear <desc>` | Create a new skill |
+| `!mcp crear <desc>` | Create, install and activate an MCP server |
+| `!mcp list` | List MCP servers |
+
+---
+
+## Architecture
 
 ```
-  Tú (Telegram / WhatsApp)
-         │
-         ▼
-┌─────────────────────┐
-│   Canal              │  Telegram Bot / WhatsApp Baileys / Business API
-│   (channels/)        │
-└────────┬────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│   SecurityGuardian   │  Auth por Chat ID · Rate limiting · Validación
-│   (security.py)      │
-└────────┬────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│   Gateway            │  Orquestador central · Pipeline de mensajes
-│   (gateway.py)       │
-└───┬────────┬────────┘
-    │        │
-    ▼        ▼
-┌────────┐ ┌──────────────┐
-│ Memory │ │ Claude Code   │  Cerebro (usa tu suscripción, NO API key)
-│ Engine │ │ Bridge        │
-└────────┘ └──────┬───────┘
-                  │
-           ┌──────┴──────┐
-           │   Skills     │  Terminal · Archivos · Web · Audio · Custom
-           │   Registry   │
-           └─────────────┘
+  You (Telegram / WhatsApp)
+         |
+         v
++---------------------+
+|   Channel Layer      |  Telegram Bot / WhatsApp Baileys / Business API
++--------+------------+
+         |
+         v
++---------------------+
+|   SecurityGuardian   |  Chat ID auth - PIN verification - Rate limiting
++--------+------------+   Prompt injection detection - Output scanning
+         |
+         v
++---------------------+
+|   Gateway            |  Central orchestrator - Message pipeline
++---+--------+--------+  Session management - Onboarding
+    |        |
+    v        v
++--------+ +--------------+
+| Memory | | Claude Code   |  Brain (uses your subscription, NOT API key)
+| Engine | | Bridge        |  Persistent session - One-shot fallback
++--------+ +------+-------+
+                  |
+           +------+------+
+           |   Skills     |  Terminal - Files - Web - Audio - MCP
+           |   Registry   |  Hot-reload - Runtime creation
+           +-------------+
 ```
 
-El asistente usa tu **suscripción de Claude** a través del CLI, no una API key. No pagas por tokens extra — usas lo que ya tienes incluido en tu plan Pro o Max.
+The assistant runs Claude Code as a **separate process** — it never interferes with your own Claude Code sessions. Multiple instances can run simultaneously.
 
 ---
 
-## Seguridad — 7 Capas
+## Security
 
-La seguridad no es un feature opcional — es la base del diseño:
-
-| Capa | Mecanismo | Descripción |
-|------|-----------|-------------|
-| **1** | Autenticación por Chat ID | Solo el `AUTHORIZED_CHAT_ID` configurado puede interactuar. Cualquier otro usuario es rechazado silenciosamente. |
-| **2** | PIN de seguridad | Operaciones sensibles (borrar datos, acceder a archivos del sistema) requieren un PIN configurable. |
-| **3** | Sandbox con bubblewrap | Los comandos se ejecutan dentro de un contenedor ligero (`bwrap`) con acceso limitado al filesystem. En Windows, se usa subprocess con timeout (bubblewrap no disponible). |
-| **4** | Validación de rutas | Toda ruta se valida para prevenir path traversal. Directorios sensibles (`.ssh`, `.gnupg`, `/etc/shadow`) están bloqueados. |
-| **5** | Rate limiting | Máximo configurable de mensajes por minuto para prevenir abuso o flood accidental. |
-| **6** | Escaneo de output | Antes de enviar cualquier respuesta, se escanea para detectar secretos filtrados (tokens, passwords, claves privadas). |
-| **7** | Cifrado de BD | Toda la memoria persistente usa SQLCipher (AES-256) con clave generada automáticamente. |
-
----
-
-## Variables de Entorno
-
-| Variable | Requerida | Default | Descripción |
-|----------|-----------|---------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Sí | — | Token del bot de @BotFather |
-| `AUTHORIZED_CHAT_ID` | Sí | — | Tu Chat ID de Telegram |
-| `SECURITY_PIN` | No | *(vacío)* | PIN para operaciones sensibles |
-| `CLAUDE_CLI_PATH` | No | `claude` | Ruta al ejecutable de Claude CLI |
-| `PROJECTS_BASE_DIR` | No | `/home` | Directorio base de proyectos |
-| `MAX_MESSAGES_PER_MINUTE` | No | `20` | Límite de mensajes por minuto |
-| `REQUIRE_APPROVAL` | No | `true` | Aprobación para acciones destructivas |
-| `TIMEZONE` | No | `America/New_York` | Zona horaria |
-| `DB_ENCRYPTION_KEY` | No | *(vacío)* | Clave SQLCipher (generada por install.sh) |
-| `WHISPER_MODEL` | No | `medium` | Modelo de Whisper: tiny, base, small, medium, large-v3 |
-| `TTS_ENGINE` | No | `auto` | Motor TTS: auto / chatterbox / espeak |
-| `LOG_LEVEL` | No | `INFO` | Nivel de logging |
+| Layer | Mechanism |
+|-------|-----------|
+| **Authentication** | Only the configured `AUTHORIZED_CHAT_ID` can interact. All others silently rejected. |
+| **PIN Verification** | Sensitive operations require a bcrypt-hashed PIN. Stored securely, never in plaintext. |
+| **Input Sanitization** | FTS5 query sanitization, path traversal prevention, SSRF blocking on private IPs. |
+| **Prompt Injection Detection** | 28 regex patterns detect injection attempts. Logged for audit. |
+| **Output Scanning** | Responses scanned for accidentally leaked secrets (tokens, keys, passwords) before delivery. |
+| **Rate Limiting** | Configurable messages-per-minute limit prevents abuse. |
+| **File Permissions** | Automatic hardening on startup: `.env` (600), `data/` (700), `logs/` (700). |
+| **Sandboxed Execution** | Commands run inside bubblewrap (Linux) or subprocess with timeout (Windows/Mac). |
 
 ---
 
-## Ejecución
+## Self-Evolution
 
-### Linux / macOS
+The assistant can modify its own source code, create new tools, and restart itself:
+
+- **Hot-reload**: Changes to utility modules apply instantly via `importlib.reload()`
+- **Auto-restart**: Changes to core modules trigger a full process restart (`os.execv`)
+- **Syntax validation**: Every modification is validated with `ast.parse()` before applying
+- **Automatic backups**: Original files backed up to `.backups/` before any change
+- **Skill creation**: New skills created at runtime, loaded by the watchdog-based registry
+- **MCP server creation**: Generates, installs (venv + deps), and registers MCP servers automatically
+
+With systemd, `Restart=always` ensures the assistant recovers from any failure within 10 seconds.
+
+---
+
+## Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `TELEGRAM_BOT_TOKEN` | Yes | — | Bot token from @BotFather |
+| `AUTHORIZED_CHAT_ID` | Yes | — | Your Telegram Chat ID |
+| `SECURITY_PIN` | No | *(empty)* | PIN for sensitive operations |
+| `CLAUDE_CLI_PATH` | No | `claude` | Path to Claude CLI executable |
+| `PROJECTS_BASE_DIR` | No | *(auto-detected)* | Base directory for projects |
+| `DB_ENCRYPTION_KEY` | No | *(empty)* | Database encryption key (generated by installer) |
+| `WHISPER_MODEL` | No | `medium` | STT model: tiny, base, small, medium, large-v3 |
+| `TTS_ENGINE` | No | `auto` | TTS engine: auto, chatterbox, espeak |
+| `TIMEZONE` | No | `America/New_York` | Timezone for scheduled tasks |
+| `LOG_LEVEL` | No | `INFO` | Logging level |
+
+---
+
+## Running
+
+### Development
 
 ```bash
+# Linux/macOS
 source .venv/bin/activate
 python -m src.main
-```
 
-### Windows
-
-```powershell
+# Windows
 .venv\Scripts\activate
 python -m src.main
 ```
 
-### Producción (Linux — systemd)
+### Production (Linux — systemd)
 
 ```bash
 sudo systemctl start ai-assistant
 sudo systemctl enable ai-assistant
-
-# Ver logs en tiempo real
 journalctl -u ai-assistant -f
 ```
 
-### Verificar que funciona
+### Windows (auto-start)
 
-1. Arranca el asistente con `python -m src.main`
-2. Abre Telegram y busca tu bot
-3. Envía "hola"
-4. El bot responde con el flujo de onboarding
+The installer can configure a Windows Scheduled Task that launches the assistant at login.
+Alternatively, double-click `start.bat`.
 
 ---
 
-## Documentación
+## Troubleshooting
 
-| Documento | Descripción |
-|-----------|-------------|
-| [Guía Paso a Paso](docs/PASO_A_PASO.md) | Tutorial completo desde cero |
-| [Telegram Setup](docs/TELEGRAM_SETUP.md) | Configurar canal de Telegram |
-| [WhatsApp Baileys](docs/WHATSAPP_BAILEYS_SETUP.md) | Configurar WhatsApp con Baileys |
-| [WhatsApp Business](docs/WHATSAPP_BUSINESS_SETUP.md) | Configurar WhatsApp Business API |
-
----
-
-## Solución de Problemas
-
-| Problema | Solución |
-|----------|----------|
-| `TELEGRAM_BOT_TOKEN not set` | Verifica tu archivo `.env` |
-| Bot no responde | Verifica el token con @BotFather, reinicia el asistente |
-| `Unauthorized` al enviar mensaje | Tu Chat ID no coincide con `AUTHORIZED_CHAT_ID` |
-| Error de audio/whisper | Verifica que ffmpeg está instalado: `ffmpeg -version` |
-| `claude: command not found` | Instala Claude CLI: `npm install -g @anthropic-ai/claude-code` |
-| Memoria/BD corrupta | Verifica `DB_ENCRYPTION_KEY` en `.env` — no la cambies después de crearla |
-| Comando rechazado por sandbox | Verifica que bubblewrap está instalado: `which bwrap` |
-| Error en Windows: `pyautogui` no instalado | Ejecuta: `pip install pyautogui pyperclip pyttsx3` |
-| Error en Windows: `ffmpeg` no encontrado | Ejecuta: `winget install ffmpeg` |
+| Problem | Solution |
+|---------|----------|
+| `TELEGRAM_BOT_TOKEN not set` | Check your `.env` file |
+| Bot doesn't respond | Verify token with @BotFather, restart assistant |
+| `Unauthorized` on message | Your Chat ID doesn't match `AUTHORIZED_CHAT_ID` |
+| Audio/whisper error | Verify ffmpeg: `ffmpeg -version` |
+| `claude: command not found` | Install Claude CLI: `npm install -g @anthropic-ai/claude-code` |
+| Task hit max turns | Complex tasks auto-retry with higher limits; split into smaller steps if needed |
 
 ---
 
-## Estructura del Proyecto
+## Contributing
 
-```
-personal-ai-assistant/
-├── src/
-│   ├── main.py                  # Entry point, Settings, signal handling
-│   ├── core/
-│   │   ├── gateway.py           # Orquestador central
-│   │   ├── security.py          # SecurityGuardian
-│   │   ├── claude_bridge.py     # Wrapper del CLI de Claude
-│   │   └── executor.py          # Ejecución sandboxed
-│   ├── memory/                  # Motor de memoria persistente
-│   ├── learning/                # Búsqueda web y base de conocimiento
-│   ├── audio/                   # STT (whisper) y TTS (chatterbox/espeak)
-│   ├── channels/                # Telegram, WhatsApp Baileys, Business API
-│   ├── skills/                  # Sistema de skills extensible
-│   ├── onboarding/              # Flujo de primer uso
-│   └── utils/                   # Cifrado, formateo, logging, platform detection
-├── data/                        # BD SQLite cifrada
-├── logs/                        # app.log, security.log, audit.log
-├── skills/                      # Skills creados por el usuario
-├── models/                      # Modelos de Whisper
-├── docs/                        # Documentación detallada
-├── systemd/                     # Servicio systemd (Linux)
-├── install.sh                   # Instalador interactivo (Linux/macOS)
-├── install.ps1                  # Instalador PowerShell (Windows)
-├── pyproject.toml               # Configuración del proyecto
-└── .env.example                 # Template de variables de entorno
-```
+1. Fork the repository
+2. Create a branch: `git checkout -b feature-name`
+3. Follow the project's code style (see below)
+4. Run tests: `pytest tests/`
+5. Run linter: `ruff check src/`
+6. Open a Pull Request
+
+### Code Style
+
+- Python 3.12+ with type hints (`str | None`, `list[str]`)
+- `from __future__ import annotations` in every module
+- `structlog` for logging (never `print()`)
+- Parameterized SQL queries exclusively (never f-strings)
+- Async-first; `asyncio.to_thread()` for blocking calls
 
 ---
 
-<a name="english"></a>
+## License
 
-## English
-
-### What is this?
-
-A **private, self-hosted AI assistant** that communicates with you through Telegram or WhatsApp. Built on top of Claude Code CLI, it uses your existing Claude subscription (Pro or Max) — no API keys, no extra token costs.
-
-### Key Features
-
-- **Permanent encrypted memory** — remembers everything you tell it, stored locally with SQLCipher (AES-256)
-- **Voice support** — send and receive voice notes with local speech recognition (faster-whisper) and TTS
-- **Terminal access** — execute commands in a sandboxed environment (bubblewrap)
-- **Web search** — searches DuckDuckGo, summarizes and stores knowledge automatically
-- **Scheduled tasks** — set reminders and recurring tasks that execute automatically
-- **7 layers of security** — authentication, PIN, sandbox, path validation, rate limiting, output scanning, encryption
-- **Multi-channel** — Telegram (free), WhatsApp Baileys, WhatsApp Business API
-- **Autonomous** — if it doesn't have a tool, it creates one. If it doesn't know something, it searches for it.
-- **Cross-platform** — runs on Windows 10+, Linux (Ubuntu 22.04+), and macOS
-
-### Quick Start
-
-```bash
-git clone https://github.com/xplus-finance/ASSISTANT_AI.git
-cd ASSISTANT_AI
-
-# Linux/macOS
-bash install.sh
-
-# Windows (PowerShell)
-powershell -ExecutionPolicy Bypass -File install.ps1
-```
-
-Requires Windows 10+, Linux (Ubuntu 22.04+), or macOS, Python 3.12+, and Claude Code CLI with a Pro or Max subscription.
-
----
-
-## Contribuir
-
-1. Fork del repositorio
-2. Crea una rama: `git checkout -b mi-feature`
-3. Haz tus cambios siguiendo el estilo del proyecto
-4. Ejecuta tests: `pytest tests/`
-5. Ejecuta linter: `ruff check src/`
-6. Crea un Pull Request
-
-### Estilo de código
-
-- Python 3.12+ con type hints (`str | None`, `list[str]`)
-- `from __future__ import annotations` en cada módulo
-- `structlog` para logging (nunca `print()`)
-- Queries SQL siempre parametrizadas (nunca f-strings)
-- Async donde sea posible; `asyncio.to_thread()` para llamadas bloqueantes
-
----
-
-## Licencia
-
-MIT — ver [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
 
 ---
 
 <div align="center">
 
-**Hecho con determinación.**
+**Built with determination.**
 
-[Reportar Bug](https://github.com/xplus-finance/ASSISTANT_AI/issues) · [Solicitar Feature](https://github.com/xplus-finance/ASSISTANT_AI/issues)
+[Report Bug](https://github.com/xplus-finance/ASSISTANT_AI/issues) · [Request Feature](https://github.com/xplus-finance/ASSISTANT_AI/issues)
 
 </div>

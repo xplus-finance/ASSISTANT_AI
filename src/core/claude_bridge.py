@@ -59,7 +59,7 @@ class ClaudeBridgeError(Exception):
 
 
 class ClaudeBridge:
-    def __init__(self, cli_path="claude", default_timeout=60):
+    def __init__(self, cli_path="claude", default_timeout=300):
         self._cli = _resolve_claude_path(cli_path)
         self._default_timeout = default_timeout
         self._install_dir = str(pathlib.Path(__file__).resolve().parent.parent.parent)
