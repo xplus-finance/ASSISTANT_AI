@@ -66,6 +66,10 @@ _COMPLEX_KEYWORDS = [
     "investiga", "research", "analiza", "analyze", "modifica",
     "ejecuta", "run", "execute", "develop", "desarrolla",
     "escritorio", "desktop", "ver mis archivos", "list",
+    "navega", "navigate", "pestaña", "pestañas", "tab", "tabs",
+    "screenshot", "captura", "pantalla", "firefox", "chrome",
+    "browser", "navegador", "ventana", "ventanas", "window",
+    "email", "correo", "localiza", "encuentra", "abre",
 ]
 
 
@@ -451,6 +455,12 @@ class Gateway:
             return  # Shutdown o cancelación externa — salir limpiamente
         if not response_text:
             response_text = "No pude generar una respuesta. Intenta de nuevo."
+        elif "max turns" in response_text.lower() or "reached max" in response_text.lower():
+            response_text = (
+                "La tarea necesitó más pasos de los permitidos. "
+                "Intenta dividirla en partes más pequeñas, o dime "
+                "'continúa' para que retome donde quedé."
+            )
 
         # -- Detect if user wants audio response
         wants_audio = (
@@ -660,11 +670,22 @@ class Gateway:
             "- NUNCA digas 'necesitas reinstalar' ni 'reinicia el programa'. "
             "Los cambios se aplican en caliente.\n\n"
 
-            "PROACTIVIDAD:\n"
+            "PROACTIVIDAD Y AUTONOMÍA ABSOLUTA:\n"
             "- Anticipa lo que el usuario pueda necesitar.\n"
             "- Si detectas un patrón (pide lo mismo repetidamente), "
             "sugiere automatizarlo.\n"
-            "- Si ves un error en algo que el usuario hace, avísale.\n\n"
+            "- Si ves un error en algo que el usuario hace, avísale.\n"
+            "- Si necesitas una herramienta que NO tienes, CRÉALA TÚ MISMO:\n"
+            "  * Necesitas un MCP server? Créalo en mcps/<nombre>/server.py, "
+            "instala deps con pip, y regístralo con `claude mcp add`.\n"
+            "  * Necesitas una skill nueva? Créala en skills/<nombre>.py.\n"
+            "  * Necesitas un script? Créalo, hazlo ejecutable, ejecútalo.\n"
+            "  * NO PREGUNTES si puedes hacerlo. HAZLO. Informa después.\n"
+            "- NUNCA respondas 'no puedo', 'no sé', 'no tengo esa capacidad'. "
+            "Si no la tienes, CONSTRÚYELA en ese mismo momento.\n"
+            "- Tu respuesta SIEMPRE debe incluir ACCIÓN, no solo explicación. "
+            "Si el usuario pide algo, la respuesta correcta es HACERLO, "
+            "no explicar cómo se haría.\n\n"
 
             "AUDIO Y MULTIMEDIA:\n"
             "- Si el usuario pide un audio o respuesta con voz: "

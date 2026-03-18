@@ -14,12 +14,12 @@ Restart=always
 RestartSec=10
 TimeoutStopSec=30
 
-# ── Security Hardening ──────────────────────────────────────────
+# -- Security Hardening --
 
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/opt/ai-assistant/data /opt/ai-assistant/logs /opt/ai-assistant/models /tmp
+ReadWritePaths=/opt/ai-assistant/data /opt/ai-assistant/logs /opt/ai-assistant/models /opt/ai-assistant/src /opt/ai-assistant/skills /opt/ai-assistant/mcps /opt/ai-assistant/.backups /tmp
 PrivateTmp=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
@@ -38,18 +38,18 @@ RestrictNamespaces=yes
 LockPersonality=yes
 SystemCallArchitectures=native
 
-# ── Resource Limits ─────────────────────────────────────────────
+# -- Resource Limits --
 
 MemoryMax=2G
 MemoryHigh=1536M
 TasksMax=256
 LimitNOFILE=4096
 
-# ── Environment ─────────────────────────────────────────────────
+# -- Environment --
 
 EnvironmentFile=/opt/ai-assistant/.env
 
-# ── Logging ─────────────────────────────────────────────────────
+# -- Logging --
 
 StandardOutput=journal
 StandardError=journal

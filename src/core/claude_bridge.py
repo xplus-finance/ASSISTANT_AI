@@ -135,7 +135,7 @@ class ClaudeBridge:
                 log.warning("claude_bridge.session_failed_using_oneshot", exc_info=True)
 
             # Fallback to one-shot
-            return await self._oneshot(prompt, system_prompt, timeout)
+            return await self._oneshot(prompt, system_prompt, timeout, complex_task=complex_task)
 
     async def _send_to_session(self, prompt, system_prompt, timeout):
         """Send message to persistent session via stdin JSON."""
@@ -197,12 +197,13 @@ class ClaudeBridge:
 
         return response_text
 
-    async def _oneshot(self, prompt, system_prompt, timeout):
+    async def _oneshot(self, prompt, system_prompt, timeout, complex_task=False):
         """Fallback: one-shot claude -p call."""
+        max_turns = '50' if complex_task else '25'
         cmd = [
             self._cli, '-p', prompt,
             '--output-format', 'text',
-            '--max-turns', '15',
+            '--max-turns', max_turns,
             '--add-dir', self._install_dir,
             '--permission-mode', 'bypassPermissions',
         ]
@@ -232,7 +233,7 @@ class ClaudeBridge:
         cmd = [
             self._cli, '-p', task,
             '--output-format', 'text',
-            '--max-turns', '15',
+            '--max-turns', '50',
             '--add-dir', project_path,
             '--permission-mode', 'bypassPermissions',
         ]
