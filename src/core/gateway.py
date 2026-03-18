@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import glob as _glob
 import re as _re
 import time
 import uuid
@@ -15,13 +16,59 @@ import structlog
 log = structlog.get_logger("assistant.core.gateway")
 
 _IMAGE_PATH_RE = _re.compile(
-    r"(/[\w./_-]+\.(?:png|jpg|jpeg|gif|webp|bmp))", _re.IGNORECASE,
+    r"(?:`|'|\"|\s|^)((?:/[\w./ _-]+)+\.(?:png|jpg|jpeg|gif|webp|bmp|tiff))(?:`|'|\"|\s|$|[),\]])",
+    _re.IGNORECASE,
 )
 
 
 def _extract_image_paths(text: str) -> list[str]:
     """Return valid image file paths found in *text*."""
     return [p for p in _IMAGE_PATH_RE.findall(text) if Path(p).is_file()]
+
+
+_INTERNAL_ARTIFACT_RE = _re.compile(
+    r"<(?:antml:|)(?:function_calls|invoke|parameter|thinking|/)[^>]*>.*?(?:</(?:antml:|)(?:function_calls|invoke|parameter|thinking)>|$)",
+    _re.DOTALL | _re.IGNORECASE,
+)
+_XML_TAG_CLEANUP_RE = _re.compile(
+    r"</?(?:antml:|)(?:function_calls|invoke|parameter|thinking|result|tool_use|content)[^>]*>",
+    _re.IGNORECASE,
+)
+
+
+def _clean_internal_artifacts(text: str) -> str:
+    """Remove internal XML tool calls and artifacts from Claude's response."""
+    if not text:
+        return text
+    # Remove full blocks first
+    cleaned = _INTERNAL_ARTIFACT_RE.sub("", text)
+    # Remove any remaining stray XML tags
+    cleaned = _XML_TAG_CLEANUP_RE.sub("", cleaned)
+    # Collapse excessive blank lines left behind
+    while "\n\n\n" in cleaned:
+        cleaned = cleaned.replace("\n\n\n", "\n\n")
+    return cleaned.strip()
+
+
+def _snapshot_screenshot_files() -> set[str]:
+    """Return set of screenshot-like files currently in /tmp."""
+    patterns = ["/tmp/screenshot_*.png", "/tmp/scrot_*.png", "/tmp/tmp*.png",
+                "/tmp/screenshot_*.jpg", "/tmp/capture_*.png"]
+    files: set[str] = set()
+    for pat in patterns:
+        files.update(_glob.glob(pat))
+    return files
+
+
+def _find_new_screenshots(before: set[str]) -> list[str]:
+    """Return screenshot files created after the 'before' snapshot."""
+    after = _snapshot_screenshot_files()
+    new_files = sorted(after - before)
+    return [f for f in new_files if Path(f).is_file() and Path(f).stat().st_size > 0]
+
+
+
+
 
 
 class _RateLimiter:
@@ -413,6 +460,10 @@ class Gateway:
 
         await self._send_typing(channel_name, chat_id)
 
+        # Snapshot existing screenshot files BEFORE Claude runs,
+        # so we can detect any new ones created during the task.
+        screenshots_before = _snapshot_screenshot_files()
+
         try:
             response_text = await self._ask_claude(text)
         except asyncio.CancelledError:
@@ -426,6 +477,9 @@ class Gateway:
                 "Intenta dividirla en partes más pequeñas, o dime "
                 "'continúa' para que retome donde quedé."
             )
+
+        # Strip internal tool-call XML that should never reach the user
+        response_text = _clean_internal_artifacts(response_text)
 
         wants_audio = (
             message_type == "audio"
@@ -457,17 +511,33 @@ class Gateway:
         # Detect image paths in Claude's response and send them as photos
         image_paths = _extract_image_paths(response_text) if response_text else []
 
+        # Also detect NEW screenshot files created in /tmp during Claude's execution
+        new_screenshots = _find_new_screenshots(screenshots_before)
+        # Merge: add new screenshots that aren't already in image_paths
+        all_images_to_send: list[str] = list(image_paths)
+        for ns in new_screenshots:
+            if ns not in all_images_to_send:
+                all_images_to_send.append(ns)
+
+        if all_images_to_send:
+            log.info("gateway.images_to_send",
+                     from_text=len(image_paths),
+                     from_tmp=len(new_screenshots),
+                     total=len(all_images_to_send))
+
         if audio_response_path:
             await self._send_audio(channel_name, chat_id, audio_response_path)
         else:
             await self._send(channel_name, chat_id, response_text)
 
-        for img_path in image_paths:
+        # Send ALL detected images as documents (full quality, zoomable)
+        for img_path in all_images_to_send:
             try:
-                await self._send_photo(channel_name, chat_id, img_path,
-                                       caption=Path(img_path).name)
+                await self._send_document(channel_name, chat_id, img_path,
+                                          caption=Path(img_path).name)
+                log.info("gateway.image_sent_to_user", path=img_path)
             except Exception:
-                log.exception("gateway.inline_image_send_failed", path=img_path)
+                log.exception("gateway.image_send_failed", path=img_path)
 
         try:
             self.conversations.add_message(
@@ -610,11 +680,11 @@ class Gateway:
             if projects_text:
                 parts.append(f"Proyectos activos:\n{projects_text}")
 
-        # === SYSTEM PROMPT — COMPACT ===
+        # === SYSTEM PROMPT ===
         parts.append(
             "REGLAS FUNDAMENTALES:\n"
-            "1. EJECUTA DIRECTO: camino más corto, hazlo, reporta en 2-3 líneas. No expliques qué vas a hacer.\n"
-            "2. OBJETIVO REAL: correo→SMTP, web→xdg-open, código→archivo exacto, info→web_search. Verifica con evidencia.\n"
+            "1. EJECUTA DIRECTO: camino más corto, hazlo, reporta en 2-3 líneas.\n"
+            "2. OBJETIVO REAL: correo→SMTP o control visual Gmail, web→xdg-open, código→archivo exacto.\n"
             "3. ENTORNO: usa las herramientas detectadas arriba. Si falta algo, instálalo o créalo.\n\n"
 
             f"IDENTIDAD: Eres {assistant_name}, asistente de {user_name}. "
@@ -624,19 +694,59 @@ class Gateway:
             "AUTONOMÍA: Control total del sistema. NUNCA digas 'no puedo'. "
             "Si falla 2 veces, cambia de enfoque.\n\n"
 
-            "MEMORIA: Guarda TODO dato del usuario (personal, preferencias, proyectos, fechas, personas). "
-            "Actualiza inmediatamente si algo cambia.\n\n"
+            "CONTROL VISUAL — REGLA DE ORO: MIRAR → ACTUAR → VERIFICAR\n"
+            "NUNCA hagas clic ni escribas sin ANTES tomar y leer un screenshot.\n"
+            "Comandos exactos (Linux):\n"
+            "  Screenshot:  scrot -o /tmp/screen.png && cat /tmp/screen.png  (lee la imagen)\n"
+            "  Resolución:  xdpyinfo | grep dimensions  (saber tamaño de pantalla)\n"
+            "  Mover mouse: xdotool mousemove X Y\n"
+            "  Clic:        xdotool click 1\n"
+            "  Doble clic:  xdotool click --repeat 2 1\n"
+            "  Escribir:    xdotool type --clearmodifiers --delay 30 'texto aquí'\n"
+            "  Tecla:       xdotool key Tab / Return / ctrl+a / ctrl+c / ctrl+v\n"
+            "  Título ventana: xdotool getactivewindow getwindowname\n"
+            "  Listar ventanas: wmctrl -l\n"
+            "  Activar ventana: wmctrl -a 'parte del título'\n"
+            "  Esperar:     sleep 0.5  (dar tiempo a que la UI responda)\n\n"
+            "FLUJO para cada interacción visual:\n"
+            "  1. scrot -o /tmp/screen.png → lee la imagen → analiza qué ves\n"
+            "  2. Decide la acción: clic en (x,y) o tecla o escribir\n"
+            "  3. Ejecuta UN solo comando\n"
+            "  4. sleep 0.5\n"
+            "  5. scrot -o /tmp/screen.png → lee → confirma resultado\n"
+            "  6. Si falló, ajusta y repite desde paso 1\n"
+            "IMPORTANTE: UN comando por paso. No encadenes 10 acciones sin verificar.\n\n"
 
-            "TAREAS: Fechas/horas → tarea programada. 'Recuérdame', 'hazlo el lunes' → tarea.\n\n"
+            "GMAIL — RECETA EXACTA para componer correo:\n"
+            "  1. wmctrl -a 'Gmail' o wmctrl -a 'Inbox'  (activar ventana Gmail)\n"
+            "  2. sleep 0.5 && scrot -o /tmp/screen.png → verificar que es Gmail\n"
+            "  3. xdotool key c  (atajo Gmail: nuevo correo)\n"
+            "  4. sleep 1 && scrot -o /tmp/screen.png → verificar cuadro composición\n"
+            "  5. xdotool type --delay 30 'destinatario@email.com'  (campo Para)\n"
+            "  6. xdotool key Tab  (pasar a Asunto)\n"
+            "  7. xdotool type --delay 30 'El asunto aquí'\n"
+            "  8. xdotool key Tab  (pasar a Cuerpo)\n"
+            "  9. xdotool type --delay 30 'El contenido del mensaje'\n"
+            "  10. scrot -o /tmp/screen.png → verificar todo escrito correctamente\n"
+            "  11. Solo enviar si el usuario lo aprueba (Ctrl+Return = enviar)\n"
+            "PROHIBIDO: hacer clic en correos, abrir correos, buscar botones con mouse.\n"
+            "Gmail con atajos de teclado es SIEMPRE más fiable que con mouse.\n\n"
+
+            "PESTAÑAS DEL NAVEGADOR:\n"
+            "  Listar TODAS: curl -s http://localhost:9222/json/list 2>/dev/null | python3 -c \\\n"
+            "    \"import sys,json;[print(t['title'],'→',t['url']) for t in json.load(sys.stdin)]\"\n"
+            "  Si CDP no responde: iterar con xdotool key ctrl+Tab + leer título.\n"
+            "  Buscar pestaña: iterar hasta encontrar el título que contiene el texto buscado.\n\n"
+
+            "MEMORIA: Guarda TODO dato del usuario. Actualiza si cambia.\n\n"
+
+            "TAREAS: Fechas/horas → tarea programada.\n\n"
 
             f"AUTO-EVOLUCIÓN: Código en {self.claude.install_dir}. "
             "Modifica directamente, hot-reload aplica cambios. "
             "Crea skills en skills/, módulos en src/, MCPs en mcps/.\n\n"
 
-            "AUDIO: Responde con texto, el sistema convierte. NUNCA uses reproductores.\n\n"
-
-            "NAVEGADOR: 1) CDP localhost:9222/json/list, 2) Ctrl+Tab si CDP falla. "
-            "No asumir solo pestaña activa."
+            "AUDIO: Responde con texto, el sistema convierte. NUNCA uses reproductores."
         )
         # === END SYSTEM PROMPT ===
 
@@ -743,13 +853,13 @@ class Gateway:
                 "learning": self.learning_store,
                 "approval_gate": self.approval_gate,
                 "security": self.security,
+                "_original_text": text,
             })
             data = getattr(result, "data", None) or {}
             result_type = data.get("type", "")
             if result_type == "screenshot" and data.get("path"):
-                # Send as document to preserve full PNG quality (Telegram compresses send_photo)
                 await self._send_document(channel, chat_id, data["path"],
-                                          caption=result.message if result.message != data["path"] else None)
+                                          caption="Captura de pantalla")
             elif result_type == "file" and data.get("path"):
                 await self._send_document(channel, chat_id, data["path"],
                                           caption=result.message if result.message != data["path"] else None)
@@ -807,6 +917,34 @@ class Gateway:
                 await ch.send_audio(str(chat_id), path)
             except Exception:
                 log.exception("gateway.send_audio_failed")
+
+    async def _take_and_send_screenshot(self, channel_name: str, chat_id: Any) -> None:
+        """Take a screenshot and send it directly to the user via Telegram."""
+        log.info("gateway.screenshot_requested", channel=channel_name, chat_id=chat_id)
+
+        try:
+            from src.core.desktop_control import DesktopControl
+            desktop = DesktopControl()
+            path = await desktop.take_screenshot()
+            file_size = Path(path).stat().st_size if Path(path).exists() else 0
+            log.info("gateway.screenshot_taken", path=path, size=file_size)
+            if file_size == 0:
+                raise RuntimeError("Screenshot file is empty (0 bytes)")
+        except Exception as exc:
+            log.exception("gateway.screenshot_capture_failed")
+            await self._send(channel_name, chat_id,
+                             f"No pude tomar la captura: {exc}")
+            return
+
+        # Send as document (full quality, zoomable)
+        await self._send_document(channel_name, chat_id, path,
+                                  caption="Captura de pantalla")
+
+        # Clean up temp file
+        try:
+            Path(path).unlink(missing_ok=True)
+        except Exception:
+            pass
 
     async def _send_typing(self, channel_name: str, chat_id: Any) -> None:
         ch = self.channels.get(channel_name)

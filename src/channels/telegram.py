@@ -116,16 +116,8 @@ class TelegramChannel(Channel):
         )
 
     async def send_photo(self, chat_id: str, photo_path: str, caption: str = "") -> None:
-        """Send a photo to a chat."""
-        if self._app is None:
-            raise RuntimeError("Telegram bot is not running.")
-
-        photo_bytes = await asyncio.to_thread(Path(photo_path).read_bytes)
-        await self._app.bot.send_photo(
-            chat_id=int(chat_id),
-            photo=photo_bytes,
-            caption=caption or None,
-        )
+        """Send image as document for full quality (no Telegram compression)."""
+        await self.send_document(chat_id, photo_path, caption=caption)
 
     async def send_document(
         self, chat_id: str, path: str, caption: str = ""
@@ -134,12 +126,21 @@ class TelegramChannel(Channel):
         if self._app is None:
             raise RuntimeError("Telegram bot is not running.")
 
-        doc_bytes = await asyncio.to_thread(Path(path).read_bytes)
+        p = Path(path)
+        if not p.is_file():
+            raise FileNotFoundError(f"Document file not found: {path}")
+
+        doc_bytes = await asyncio.to_thread(p.read_bytes)
+        filename = p.name
+        logger.info("telegram.sending_document", path=path, size=len(doc_bytes),
+                 filename=filename)
         await self._app.bot.send_document(
             chat_id=int(chat_id),
             document=doc_bytes,
             caption=caption or None,
+            filename=filename,
         )
+        logger.info("telegram.document_sent", chat_id=chat_id, filename=filename)
 
     async def send_typing(self, chat_id: str) -> None:
         """Send a typing indicator."""
