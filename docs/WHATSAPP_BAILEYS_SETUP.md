@@ -2,57 +2,50 @@
 
 ---
 
-## ADVERTENCIA IMPORTANTE
+## ADVERTENCIA
 
-> **Baileys usa ingenieria inversa del protocolo de WhatsApp Web. NO es una API oficial.**
+> **Baileys usa ingenieria inversa del protocolo de WhatsApp Web. NO es API oficial.**
 >
-> Riesgos reales:
-> - **Ban temporal o permanente** del numero (~5-15% de probabilidad)
-> - Meta puede cambiar el protocolo sin aviso, rompiendo la conexion
-> - No hay soporte oficial ni garantias de funcionamiento
+> - **Ban temporal o permanente** del numero (~5-15% probabilidad)
+> - Meta puede cambiar el protocolo sin aviso
+> - Sin soporte oficial
 >
-> **Reglas de oro:**
-> - **NUNCA** uses tu numero personal
-> - Usa un numero virtual dedicado exclusivamente para el bot
-> - Si el numero es importante para ti, usa WhatsApp Business API en su lugar
+> **NUNCA** uses tu numero personal. Usa un numero virtual dedicado.
+> Si el numero importa, usa WhatsApp Business API.
 
 ---
 
-## Requisitos previos
+## Requisitos
 
-- El asistente instalado (haber ejecutado `install.sh` en Linux/macOS o `install.ps1` en Windows)
-- Node.js 18+ instalado
-- Un numero de telefono virtual dedicado
-- Un telefono o emulador donde registrar WhatsApp con ese numero
+| Requisito | Detalle |
+|-----------|---------|
+| Asistente instalado | `install.sh` (Linux/macOS) o `install.ps1` (Windows) ejecutado |
+| Node.js | 18+ |
+| Numero virtual | Dedicado exclusivamente para el bot |
+| Telefono/emulador | Para registrar WhatsApp con el numero virtual |
 
 ---
 
 ## Paso 1: Obtener un numero virtual
 
-Necesitas un numero de telefono que pueda recibir SMS para verificar WhatsApp. **Este numero es desechable** -- si lo banean, consigues otro.
-
 | Servicio | Costo | Paises | Notas |
 |----------|-------|--------|-------|
-| TextNow | Gratis | USA/Canada | Puede expirar si no lo usas |
-| Google Voice | Gratis | Solo USA | Requiere numero existente para verificar |
+| TextNow | Gratis | USA/Canada | Puede expirar sin uso |
+| Google Voice | Gratis | Solo USA | Requiere numero existente |
 | Hushed | ~$2/mes | Multiples | Buena opcion economica |
 | MySudo | ~$1/mes | USA/Canada | Buena privacidad |
-| Twilio | ~$1-2/mes | Muchos paises | Mas tecnico pero confiable |
-| SIM prepaga | ~$2-5 unica vez | Local | Comprar un chip barato |
+| Twilio | ~$1-2/mes | Muchos | Mas tecnico, confiable |
+| SIM prepaga | ~$2-5 una vez | Local | Chip barato |
 
-### Proceso:
-
-1. Obtener el numero virtual en el servicio elegido
-2. Instalar WhatsApp en un telefono o emulador (BlueStacks, etc.)
-3. Registrar WhatsApp con el numero virtual
-4. Verificar con SMS o llamada
-5. Una vez verificado, ya puedes vincular dispositivos
+Proceso:
+1. Obtener numero en el servicio elegido
+2. Instalar WhatsApp en telefono o emulador (BlueStacks, etc.)
+3. Registrar con el numero virtual
+4. Verificar via SMS o llamada
 
 ---
 
 ## Paso 2: Instalar Node.js
-
-Se requiere Node.js 18 o superior. La instalacion varia segun la plataforma:
 
 ### Linux (Ubuntu/Debian)
 
@@ -73,7 +66,7 @@ sudo dnf install -y nodejs
 sudo pacman -S nodejs npm
 ```
 
-### macOS (Homebrew)
+### macOS
 
 ```bash
 brew install node
@@ -81,13 +74,13 @@ brew install node
 
 ### Windows
 
-Descarga el instalador desde [nodejs.org](https://nodejs.org/) (version LTS 20+) o usa winget:
-
 ```powershell
 winget install --id OpenJS.NodeJS.LTS -e
 ```
 
-### Alternativa multiplataforma con nvm
+O descargar desde [nodejs.org](https://nodejs.org/) (LTS 20+).
+
+### nvm (multiplataforma)
 
 ```bash
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash
@@ -105,16 +98,15 @@ npm --version   # 10.x.x
 
 ---
 
-## Paso 3: Instalar el bridge de WhatsApp
+## Paso 3: Instalar el bridge
 
 ```bash
-cd /ruta/al/personal-ai-assistant/whatsapp-bridge
+cd /ruta/al/ASSISTANT_AI/whatsapp-bridge
 npm install
 ```
 
-Esto instala Baileys y todas las dependencias necesarias.
+Si el directorio no existe:
 
-Si el directorio `whatsapp-bridge/` no existe, crealo:
 ```bash
 mkdir -p whatsapp-bridge
 cd whatsapp-bridge
@@ -124,32 +116,29 @@ npm install @whiskeysockets/baileys express qrcode-terminal pino
 
 ---
 
-## Paso 4: Iniciar el bridge y escanear QR
+## Paso 4: Iniciar bridge y escanear QR
 
 ```bash
 cd whatsapp-bridge
 npm start
 ```
 
-1. Aparecera un **codigo QR** en la terminal
-2. Abre WhatsApp en el telefono donde registraste el numero virtual
-3. Ve a **Configuracion > Dispositivos vinculados > Vincular dispositivo**
-4. Escanea el QR que aparece en la terminal
-5. Espera a que diga `Conectado exitosamente`
+1. Aparece un **codigo QR** en terminal
+2. En WhatsApp (telefono del numero virtual): **Configuracion > Dispositivos vinculados > Vincular dispositivo**
+3. Escanear el QR
+4. Esperar mensaje `Conectado exitosamente`
 
-> **Importante:** La sesion se guarda en `whatsapp-bridge/auth_info/`. **No borres esta carpeta** o tendras que escanear el QR de nuevo.
+> La sesion se guarda en `whatsapp-bridge/auth_info/`. No borrar esa carpeta.
 
 ---
 
-## Paso 5: Verificar que el bridge funciona
-
-Con el bridge corriendo, verifica la conexion:
+## Paso 5: Verificar conexion
 
 ```bash
 curl http://127.0.0.1:3001/health
 ```
 
-Deberia devolver:
+Respuesta esperada:
 ```json
 {"status":"connected","uptime":...}
 ```
@@ -157,8 +146,6 @@ Deberia devolver:
 ---
 
 ## Paso 6: Configurar .env
-
-Edita el `.env` del proyecto principal:
 
 ```bash
 # Linux / macOS
@@ -168,112 +155,104 @@ nano .env
 notepad .env
 ```
 
-Agrega o modifica estas lineas:
-
 ```
-# --- WhatsApp Baileys ---
 WHATSAPP_NUMBER=+1234567890
 WHATSAPP_BRIDGE_URL=http://localhost:3001
 ```
 
-El numero en `WHATSAPP_NUMBER` es el numero virtual que usaste para registrar WhatsApp (con codigo de pais).
+`WHATSAPP_NUMBER` = numero virtual con codigo de pais.
 
 ---
 
 ## Paso 7: Iniciar todo
 
-Necesitas **dos procesos** corriendo simultaneamente:
+Dos procesos simultaneos:
 
-### Terminal 1: Bridge de WhatsApp
+### Terminal 1: Bridge
+
 ```bash
-cd /ruta/al/personal-ai-assistant/whatsapp-bridge
+cd /ruta/al/ASSISTANT_AI/whatsapp-bridge
 npm start
 ```
 
 ### Terminal 2: Asistente
+
 ```bash
 # Linux / macOS
-cd /ruta/al/personal-ai-assistant
+cd /ruta/al/ASSISTANT_AI
 source .venv/bin/activate
 python -m src.main
 
 # Windows
-cd C:\ruta\al\personal-ai-assistant
+cd C:\ruta\al\ASSISTANT_AI
 .venv\Scripts\python.exe -m src.main
 ```
 
-O si instalaste los servicios systemd (Linux):
+Con systemd (Linux):
 ```bash
 sudo systemctl start ai-assistant
-# (el bridge necesita su propio servicio systemd o ejecutarse por separado)
 ```
 
-En Windows puedes usar `start.bat` para el asistente (que ademas hace `git pull` automatico al arrancar) y dejar el bridge en una ventana de terminal aparte.
+En Windows: `start.bat` para el asistente, bridge en terminal aparte.
 
 ---
 
 ## Medidas anti-ban (incluidas en el bridge)
 
-El bridge incluye estas protecciones por defecto para reducir el riesgo de ban:
+1. **Delays aleatorios**: 1-3 segundos antes de cada respuesta
+2. **Rate limiting**: maximo 10 mensajes por minuto
+3. **Indicador de escritura**: envia "escribiendo..." antes de responder
+4. **Sin mensajes masivos**: solo responde, nunca inicia conversaciones
+5. **Reconexion gradual**: backoff exponencial en desconexiones
 
-1. **Delays aleatorios** -- 1-3 segundos de espera antes de cada respuesta (simula escritura humana)
-2. **Rate limiting** -- maximo 10 mensajes por minuto
-3. **Indicador de escritura** -- envia "escribiendo..." antes de responder
-4. **Sin mensajes masivos** -- solo responde, nunca inicia conversaciones no solicitadas
-5. **Reconexion gradual** -- backoff exponencial en desconexiones (no reconecta inmediatamente)
-
-### Recomendaciones adicionales:
-
-- No envies muchos mensajes seguidos al bot (espera las respuestas)
-- No uses el bot 24/7 sin pausa los primeros dias
-- Empieza con poco uso e incrementa gradualmente
-- No envies contenido que pueda ser marcado como spam
+Recomendaciones:
+- No enviar muchos mensajes seguidos (esperar respuestas)
+- No usar 24/7 sin pausa los primeros dias
+- Empezar con poco uso e incrementar
+- Evitar contenido que pueda marcarse como spam
 
 ---
 
-## Si te banean el numero
+## Si banean el numero
 
-No es el fin del mundo:
-
-1. Consigue otro numero virtual (son baratos o gratis)
-2. Registra WhatsApp con el nuevo numero
-3. Borra la sesion anterior:
+1. Obtener otro numero virtual
+2. Registrar WhatsApp con el nuevo numero
+3. Borrar sesion anterior:
    ```bash
    rm -rf whatsapp-bridge/auth_info/
    ```
-4. Reinicia el bridge (`npm start`) y escanea el QR de nuevo
-5. Actualiza el numero en `.env` si es diferente
+4. Reiniciar bridge (`npm start`), escanear QR
+5. Actualizar numero en `.env`
 
-La memoria y datos del asistente **no se pierden** -- estan en la base de datos local cifrada, no en WhatsApp.
+La memoria del asistente no se pierde — esta en la DB local cifrada.
 
 ---
 
 ## Solucion de problemas
 
-### El QR no aparece
-- Verifica que Node.js 18+ esta instalado: `node --version`
-- Borra `auth_info/` y reinicia
-- Verifica que el puerto 3001 no esta en uso: `lsof -i :3001` (Linux/macOS) o `netstat -ano | findstr :3001` (Windows)
+### QR no aparece
+- Verificar Node.js 18+: `node --version`
+- Borrar `auth_info/` y reiniciar
+- Verificar puerto 3001 libre:
+  - Linux/macOS: `lsof -i :3001`
+  - Windows: `netstat -ano | findstr :3001`
 
-### Se desconecta constantemente
-- Asegurate de que el telefono con el numero virtual tiene conexion a internet estable
-- No uses WhatsApp Web simultaneamente en otro navegador/dispositivo
-- Revisa que no haya un conflicto de sesiones
-- Revisa los logs del bridge por errores
+### Desconexiones constantes
+- Verificar conexion a internet del telefono con el numero virtual
+- No usar WhatsApp Web simultaneamente en otro dispositivo
+- Revisar logs del bridge
 
-### El asistente no recibe mensajes
-- Verifica que el bridge esta corriendo: `curl http://127.0.0.1:3001/health`
-- Verifica que el `WHATSAPP_BRIDGE_URL` en `.env` apunta al bridge
-- Revisa los logs: `tail -20 logs/app.log` (Linux/macOS) o abre `logs\app.log` (Windows)
+### Asistente no recibe mensajes
+- Verificar bridge corriendo: `curl http://127.0.0.1:3001/health`
+- Verificar `WHATSAPP_BRIDGE_URL` en `.env`
+- Revisar logs:
+  - Linux/macOS: `tail -20 logs/app.log`
+  - Windows: abrir `logs\app.log`
 
-### Error "Connection closed" o "Stream errored"
-- Es normal que la conexion se reinicie ocasionalmente
-- El bridge tiene reconexion automatica
-- Si persiste, borra `auth_info/` y escanea el QR de nuevo
-
-### Numero baneado
-- Ver seccion "Si te banean el numero" arriba
-- Considera migrar a WhatsApp Business API para evitar bans futuros
+### "Connection closed" o "Stream errored"
+- Normal que la conexion se reinicie ocasionalmente
+- Bridge tiene reconexion automatica
+- Si persiste: borrar `auth_info/` y re-escanear QR
 
 ---
 
@@ -289,4 +268,4 @@ La memoria y datos del asistente **no se pierden** -- estan en la base de datos 
 | Ideal para | Uso personal, pruebas | Produccion |
 | Plataformas | Windows, Linux, macOS | Windows, Linux, macOS |
 
-Si el riesgo de ban te preocupa, la guia de WhatsApp Business API esta en [WHATSAPP_BUSINESS_SETUP.md](WHATSAPP_BUSINESS_SETUP.md).
+Guia Business API: [WHATSAPP_BUSINESS_SETUP.md](WHATSAPP_BUSINESS_SETUP.md).

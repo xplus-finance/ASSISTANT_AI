@@ -1,9 +1,4 @@
-"""
-File operations skill — read, write, and list files with security checks.
-
-All file access is validated against a set of allowed base directories
-to prevent the assistant from reading or writing sensitive system files.
-"""
+"""File operations skill with path security validation."""
 
 from __future__ import annotations
 
@@ -18,7 +13,6 @@ from src.utils.platform import IS_WINDOWS
 
 log = structlog.get_logger("assistant.skills.files")
 
-# Directories that are always forbidden (platform-specific)
 _FORBIDDEN_PATHS_UNIX: frozenset[str] = frozenset({
     "/etc/shadow",
     "/etc/passwd",
@@ -38,10 +32,8 @@ _FORBIDDEN_PATHS_WIN: frozenset[str] = frozenset({
 
 _FORBIDDEN_PATHS: frozenset[str] = _FORBIDDEN_PATHS_WIN if IS_WINDOWS else _FORBIDDEN_PATHS_UNIX
 
-# Maximum file size to read (bytes)
 _MAX_READ_SIZE = 512_000  # 500 KB
 
-# Maximum output length for display
 _MAX_DISPLAY_OUTPUT = 4000
 
 
@@ -50,12 +42,6 @@ def _validate_file_access(
     allowed_dirs: list[str] | None = None,
     guardian: Any = None,
 ) -> str | None:
-    """
-    Validate that *path* is safe to access.
-
-    Returns:
-        An error message string if access is denied, or ``None`` if OK.
-    """
     resolved = str(Path(path).resolve())
 
     # Check via SecurityGuardian if available
@@ -83,7 +69,7 @@ def _validate_file_access(
 
 
 class FilesSkill(BaseSkill):
-    """Read, write, and list files with security validation."""
+
 
     @property
     def name(self) -> str:
@@ -98,20 +84,6 @@ class FilesSkill(BaseSkill):
         return ["!file", "!files", "!read", "!write"]
 
     async def execute(self, args: str, context: dict[str, Any]) -> SkillResult:
-        """
-        Handle file operations.
-
-        Supported sub-commands:
-            ``read <path>``   — show file contents
-            ``write <path> <content>`` — write content to file (needs approval)
-            ``list <path>``   — list directory contents
-
-        Context keys used:
-            ``allowed_dirs`` (list[str]): Whitelist of base directories.
-            ``security_guardian``: Optional SecurityGuardian.
-            ``approval_gate``: For write approval.
-            ``send_fn``, ``receive_fn``: For interactive approval.
-        """
         if not args:
             return SkillResult(
                 success=False,
@@ -140,17 +112,12 @@ class FilesSkill(BaseSkill):
             # Treat the whole arg as a path to read
             return await self._read(args.strip(), allowed_dirs, guardian)
 
-    # ------------------------------------------------------------------
-    # Sub-commands
-    # ------------------------------------------------------------------
-
     async def _read(
         self,
         path: str,
         allowed_dirs: list[str] | None,
         guardian: Any,
     ) -> SkillResult:
-        """Read and return file contents."""
         if not path:
             return SkillResult(success=False, message="Especifica la ruta del archivo.")
 
@@ -181,7 +148,6 @@ class FilesSkill(BaseSkill):
         except Exception as exc:
             return SkillResult(success=False, message=f"Error leyendo archivo: {exc}")
 
-        # Truncate display if very long
         display = content
         if len(display) > _MAX_DISPLAY_OUTPUT:
             display = display[:_MAX_DISPLAY_OUTPUT] + "\n... (contenido truncado)"
@@ -199,7 +165,6 @@ class FilesSkill(BaseSkill):
         guardian: Any,
         context: dict[str, Any],
     ) -> SkillResult:
-        """Write content to a file (requires approval)."""
         parts = args.split(maxsplit=1)
         if len(parts) < 2:
             return SkillResult(
@@ -213,7 +178,6 @@ class FilesSkill(BaseSkill):
         if error:
             return SkillResult(success=False, message=error)
 
-        # Require approval for writes
         gate = context.get("approval_gate")
         send_fn = context.get("send_fn")
         receive_fn = context.get("receive_fn")
@@ -256,7 +220,6 @@ class FilesSkill(BaseSkill):
         allowed_dirs: list[str] | None,
         guardian: Any,
     ) -> SkillResult:
-        """List directory contents."""
         path = os.path.expanduser(path)
         error = _validate_file_access(path, allowed_dirs, guardian)
         if error:

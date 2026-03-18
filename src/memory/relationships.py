@@ -1,6 +1,4 @@
-"""
-Relationship tracking and sentiment analysis over time.
-"""
+"""Relationship tracking and sentiment analysis."""
 
 from __future__ import annotations
 
@@ -23,7 +21,7 @@ _STAGES: list[tuple[str, int, int]] = [
 
 
 class RelationshipTracker:
-    """Track and query the evolving user-assistant relationship."""
+
 
     def __init__(self, engine: MemoryEngine) -> None:
         self._engine = engine

@@ -1,12 +1,4 @@
-"""Text-to-Speech synthesis with graceful engine degradation.
-
-Tries engines in order: chatterbox -> piper -> gTTS -> espeak.
-The first available engine is used transparently.
-
-Supports voice customization via set_voice_params():
-  - pitch: "low" (masculine/grave), "normal", "high" (feminine)
-  - speed: 0.8 (slow) to 1.5 (fast), default 1.0
-"""
+"""Text-to-Speech with engine fallback: chatterbox -> piper -> gTTS -> espeak."""
 
 from __future__ import annotations
 
@@ -21,7 +13,6 @@ logger = logging.getLogger(__name__)
 
 _ENGINE_PRIORITY = ("chatterbox", "piper", "gtts", "espeak")
 
-# Pitch semitone offsets for pydub post-processing
 _PITCH_MAP = {
     "low": -4,       # Masculine / grave
     "very_low": -6,
@@ -32,7 +23,7 @@ _PITCH_MAP = {
 
 
 class Synthesizer:
-    """Text-to-Speech engine with automatic fallback and voice customization."""
+
 
     def __init__(self, engine: str = "auto") -> None:
         self._requested_engine = engine.lower()
@@ -46,7 +37,6 @@ class Synthesizer:
             self._active_engine = self._requested_engine
             logger.info("TTS engine forced to: %s", self._active_engine)
 
-        # Voice parameters (can be changed at runtime)
         self._pitch: str = "low"      # Default: masculine/grave
         self._speed: float = 1.78     # Default: fast, user preference
         self._language: str = "es"
@@ -57,13 +47,6 @@ class Synthesizer:
         speed: float | None = None,
         language: str | None = None,
     ) -> None:
-        """Update voice parameters.
-
-        Args:
-            pitch: "very_low", "low", "normal", "high", "very_high"
-            speed: 0.5 to 2.0 (1.0 = normal)
-            language: BCP-47 code like "es", "en", "fr"
-        """
         if pitch is not None:
             if pitch not in _PITCH_MAP:
                 logger.warning("Unknown pitch '%s', using 'normal'", pitch)
@@ -79,7 +62,6 @@ class Synthesizer:
         )
 
     def synthesize(self, text: str, output_path: str | None = None) -> str:
-        """Convert text to speech and save as an audio file."""
         if not text or not text.strip():
             raise ValueError("Cannot synthesize empty text.")
         engines_to_try: tuple[str, ...]
@@ -100,7 +82,6 @@ class Synthesizer:
                 self._active_engine = engine
                 logger.info("TTS synthesis OK via '%s': %s", engine, result_path)
 
-                # Post-process: apply pitch and speed adjustments
                 result_path = self._apply_voice_effects(result_path)
 
                 return result_path
@@ -115,12 +96,6 @@ class Synthesizer:
         )
 
     def _apply_voice_effects(self, audio_path: str) -> str:
-        """Apply pitch shift and speed change using ffmpeg filters.
-
-        Uses ffmpeg atempo for speed (preserves pitch) and asetrate+aresample
-        for pitch (independent of speed). This avoids the coupling problem
-        where simple resampling ties speed and pitch together.
-        """
         pitch_semitones = _PITCH_MAP.get(self._pitch, 0)
         speed = self._speed
 
@@ -134,7 +109,6 @@ class Synthesizer:
                 logger.warning("ffmpeg not available, skipping voice effects")
                 return audio_path
 
-            # Probe actual sample rate (gTTS=24000, espeak=22050, wav=44100)
             source_rate = 44100
             if ffprobe_bin:
                 probe = subprocess.run(
@@ -152,12 +126,10 @@ class Synthesizer:
 
             filters = []
 
-            # Speed via atempo (preserves pitch, range 0.5-2.0)
             if abs(speed - 1.0) >= 0.05:
                 tempo = max(0.5, min(2.0, speed))
                 filters.append(f"atempo={tempo:.3f}")
 
-            # Pitch via asetrate + aresample using ACTUAL source rate
             if pitch_semitones != 0:
                 pitch_factor = 2 ** (pitch_semitones / 12.0)
                 new_rate = int(source_rate * pitch_factor)
@@ -182,7 +154,6 @@ class Synthesizer:
                 logger.warning("ffmpeg voice effects failed: %s", result.stderr[:200])
                 return audio_path
 
-            # Clean up original
             try:
                 os.unlink(audio_path)
             except OSError:
@@ -245,15 +216,11 @@ class Synthesizer:
             raise RuntimeError("Neither espeak-ng nor espeak found in PATH.")
         path = self._resolve_output_path(output_path, suffix=".wav")
 
-        # Build espeak args with voice parameters
         args = [binary]
-        # Voice: use male Spanish variant
         voice = f"{self._language}+m3" if self._pitch in ("low", "very_low") else self._language
         args.extend(["-v", voice])
-        # Speed in words-per-minute (default 175, range 80-450)
         wpm = int(175 * self._speed)
         args.extend(["-s", str(wpm)])
-        # Pitch (0-99, default 50)
         pitch_val = 50 + (_PITCH_MAP.get(self._pitch, 0) * 5)
         pitch_val = max(0, min(99, pitch_val))
         args.extend(["-p", str(pitch_val)])

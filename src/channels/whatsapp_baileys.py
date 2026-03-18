@@ -1,9 +1,4 @@
-"""WhatsApp channel via Baileys Node.js bridge.
-
-WARNING: Uses unofficial WhatsApp Web protocol.
-RISK: WhatsApp may ban the phone number used.
-NEVER use your personal number \u2014 use a virtual/dedicated number only.
-"""
+"""WhatsApp channel via Baileys Node.js bridge (unofficial protocol)."""
 
 from __future__ import annotations
 

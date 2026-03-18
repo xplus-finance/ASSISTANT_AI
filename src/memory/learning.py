@@ -1,6 +1,4 @@
-"""
-Learning and knowledge persistence.
-"""
+"""Learned facts and knowledge persistence."""
 
 from __future__ import annotations
 

@@ -1,9 +1,4 @@
-"""
-Learning skill — web search, content extraction, and knowledge storage.
-
-Uses ``httpx`` for HTTP requests and ``beautifulsoup4`` for HTML parsing.
-Learned content is persisted in the ``knowledge`` table with full-text search.
-"""
+"""Learning skill: web search, content extraction, knowledge storage."""
 
 from __future__ import annotations
 
@@ -19,10 +14,8 @@ from src.skills.base_skill import BaseSkill, SkillResult
 
 log = structlog.get_logger("assistant.skills.learn")
 
-# Maximum content length to store per knowledge entry
 _MAX_CONTENT_LENGTH = 10_000
 
-# User-Agent for HTTP requests
 _USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -30,7 +23,7 @@ _USER_AGENT = (
 
 
 class LearnSkill(BaseSkill):
-    """Search the web, extract content, and store knowledge."""
+
 
     def __init__(self, memory_engine: MemoryEngine | None = None) -> None:
         self._memory = memory_engine
@@ -48,15 +41,6 @@ class LearnSkill(BaseSkill):
         return ["!busca", "!aprende", "!aprendido"]
 
     async def execute(self, args: str, context: dict[str, Any]) -> SkillResult:
-        """
-        Handle learning operations.
-
-        Sub-commands:
-            ``!busca <query>``     — search the web and summarize results
-            ``!aprende <url>``     — extract and store content from a URL
-            ``!aprendido``         — list stored knowledge
-            ``!aprendido buscar <q>`` — search stored knowledge
-        """
         memory = self._memory or context.get("memory")
         if memory is None:
             return SkillResult(success=False, message="Motor de memoria no disponible.")
@@ -80,17 +64,12 @@ class LearnSkill(BaseSkill):
                 ),
             )
 
-    # ------------------------------------------------------------------
-    # Web search
-    # ------------------------------------------------------------------
-
     async def _web_search(
         self,
         memory: MemoryEngine,
         query: str,
         context: dict[str, Any],
     ) -> SkillResult:
-        """Search the web using DuckDuckGo HTML (no API key needed)."""
         if not query.strip():
             return SkillResult(success=False, message="Uso: !busca <termino de busqueda>")
 
@@ -148,7 +127,6 @@ class LearnSkill(BaseSkill):
 
     @staticmethod
     def _parse_ddg_results(soup: Any) -> list[dict[str, str]]:
-        """Parse DuckDuckGo HTML search results."""
         results: list[dict[str, str]] = []
         for result in soup.select(".result"):
             title_tag = result.select_one(".result__title a, .result__a")
@@ -161,7 +139,6 @@ class LearnSkill(BaseSkill):
             url = title_tag.get("href", "")
             snippet = snippet_tag.get_text(strip=True) if snippet_tag else ""
 
-            # DDG wraps URLs in a redirect; extract the actual URL
             if "uddg=" in url:
                 parsed = urlparse(url)
                 qs = parse_qs(parsed.query)
@@ -172,19 +149,13 @@ class LearnSkill(BaseSkill):
 
         return results
 
-    # ------------------------------------------------------------------
-    # Learn from URL
-    # ------------------------------------------------------------------
-
     async def _learn_from_url(
         self, memory: MemoryEngine, url: str
     ) -> SkillResult:
-        """Fetch a URL, extract text content, and store it as knowledge."""
         url = url.strip()
         if not url:
             return SkillResult(success=False, message="Uso: !aprende <url>")
 
-        # Basic URL validation
         parsed = urlparse(url)
         if not parsed.scheme:
             url = "https://" + url
@@ -229,18 +200,14 @@ class LearnSkill(BaseSkill):
 
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        # Extract title
         title_tag = soup.find("title")
         topic = title_tag.get_text(strip=True) if title_tag else parsed.netloc
 
-        # Remove scripts, styles, nav, footer
         for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
             tag.decompose()
 
-        # Extract text
         text = soup.get_text(separator="\n", strip=True)
 
-        # Clean up whitespace
         text = re.sub(r"\n{3,}", "\n\n", text)
         text = text[:_MAX_CONTENT_LENGTH]
 
@@ -250,7 +217,6 @@ class LearnSkill(BaseSkill):
                 message="La pagina no contiene suficiente texto extraible.",
             )
 
-        # Store in knowledge table
         knowledge_id = memory.insert_returning_id(
             """
             INSERT INTO knowledge (topic, content, source_url)
@@ -270,12 +236,7 @@ class LearnSkill(BaseSkill):
             data={"id": knowledge_id, "topic": topic, "url": url},
         )
 
-    # ------------------------------------------------------------------
-    # Show stored knowledge
-    # ------------------------------------------------------------------
-
     def _handle_learned(self, memory: MemoryEngine, args: str) -> SkillResult:
-        """Handle ``!aprendido`` subcommands."""
         if not args.strip():
             return self._list_knowledge(memory)
 
@@ -289,7 +250,6 @@ class LearnSkill(BaseSkill):
             return self._search_knowledge(memory, args)
 
     def _list_knowledge(self, memory: MemoryEngine) -> SkillResult:
-        """List all stored knowledge entries."""
         rows = memory.fetchall_dicts(
             """
             SELECT id, topic, source_url, learned_at,
@@ -318,7 +278,6 @@ class LearnSkill(BaseSkill):
         return SkillResult(success=True, message="\n".join(lines), data={"entries": rows})
 
     def _search_knowledge(self, memory: MemoryEngine, query: str) -> SkillResult:
-        """Full-text search in stored knowledge."""
         if not query.strip():
             return SkillResult(success=False, message="Uso: !aprendido buscar <termino>")
 
@@ -350,7 +309,6 @@ class LearnSkill(BaseSkill):
         lines = [f"Conocimiento sobre '{query.strip()}':", ""]
         for row in rows:
             lines.append(f"#{row['id']}: {row['topic']}")
-            # Show first 300 chars of content
             preview = row["content"][:300].replace("\n", " ")
             lines.append(f"  {preview}...")
             lines.append("")

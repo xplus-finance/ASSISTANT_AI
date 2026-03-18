@@ -1,4 +1,4 @@
-"""Approval gate for dangerous operations (auto-expires after 5 minutes)."""
+"""Approval gate for dangerous operations with 5-minute expiry."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ class ApprovalRequest:
 
 
 class ApprovalGate:
-    """Blocks dangerous operations until the user explicitly approves them."""
+
 
     def __init__(self) -> None:
         self._pending: dict[str, ApprovalRequest] = {}

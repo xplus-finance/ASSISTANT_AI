@@ -1,10 +1,4 @@
-"""
-Meta-skill for creating new skills at runtime.
-
-Uses Claude (via ``ClaudeBridge``) to generate a new skill file from a
-natural-language description.  The generated code is shown to the user
-for approval before being saved and activated.
-"""
+"""Meta-skill: generate new skills at runtime via Claude."""
 
 from __future__ import annotations
 
@@ -41,7 +35,7 @@ _GENERATION_PROMPT = textwrap.dedent("""\
 
 
 class SkillCreatorSkill(BaseSkill):
-    """Create new skills dynamically using Claude Code."""
+
 
     def __init__(self, bridge: ClaudeBridge | None = None) -> None:
         self._bridge = bridge
@@ -59,20 +53,6 @@ class SkillCreatorSkill(BaseSkill):
         return ["!skill"]
 
     async def execute(self, args: str, context: dict[str, Any]) -> SkillResult:
-        """
-        Create a new skill.
-
-        Sub-commands:
-            ``!skill crear <descripcion>`` — generate a new skill
-            ``!skill listar``              — list user-created skills
-
-        Context keys used:
-            ``bridge`` (ClaudeBridge): For code generation.
-            ``skills_dir`` (str): Where to save user skills.
-            ``registry`` (SkillRegistry): To hot-register new skills.
-            ``approval_gate``: For write approval.
-            ``send_fn``, ``receive_fn``: For user interaction.
-        """
         if not args.strip():
             return SkillResult(
                 success=False,
@@ -95,14 +75,9 @@ class SkillCreatorSkill(BaseSkill):
             # Treat as "crear" with the full args as description
             return await self._create_skill(args, context)
 
-    # ------------------------------------------------------------------
-    # Skill creation
-    # ------------------------------------------------------------------
-
     async def _create_skill(
         self, description: str, context: dict[str, Any]
     ) -> SkillResult:
-        """Generate, preview, and optionally save a new skill."""
         if not description.strip():
             return SkillResult(
                 success=False,
@@ -127,7 +102,6 @@ class SkillCreatorSkill(BaseSkill):
                 message="No se configuro el directorio de skills del usuario.",
             )
 
-        # Generate the skill code via Claude
         try:
             available = await bridge.check_available()
             if not available:
@@ -152,7 +126,6 @@ class SkillCreatorSkill(BaseSkill):
                 message=f"Error generando el skill: {exc}",
             )
 
-        # Clean up the generated code
         code = self._clean_code(generated_code)
 
         if not code or len(code) < 50:
@@ -161,7 +134,6 @@ class SkillCreatorSkill(BaseSkill):
                 message="El codigo generado esta vacio o es demasiado corto.",
             )
 
-        # Show to user for approval
         if send_fn and receive_fn:
             preview = code[:3000]
             if len(code) > 3000:
@@ -180,7 +152,6 @@ class SkillCreatorSkill(BaseSkill):
                     message="Creacion de skill cancelada.",
                 )
         else:
-            # No interactive approval available — refuse to auto-save
             return SkillResult(
                 success=False,
                 message=(
@@ -190,11 +161,9 @@ class SkillCreatorSkill(BaseSkill):
                 ),
             )
 
-        # Derive filename from skill class name or description
         filename = self._derive_filename(code, description)
         filepath = Path(skills_dir) / filename
 
-        # Save the file
         try:
             Path(skills_dir).mkdir(parents=True, exist_ok=True)
             filepath.write_text(code, encoding="utf-8")
@@ -205,7 +174,6 @@ class SkillCreatorSkill(BaseSkill):
                 message=f"Error guardando el skill: {exc}",
             )
 
-        # Try to register immediately via registry
         registry = context.get("registry") or context.get("skill_registry")
         if registry is not None:
             try:
@@ -237,12 +205,7 @@ class SkillCreatorSkill(BaseSkill):
             data={"path": str(filepath)},
         )
 
-    # ------------------------------------------------------------------
-    # List user skills
-    # ------------------------------------------------------------------
-
     def _list_user_skills(self, context: dict[str, Any]) -> SkillResult:
-        """List all user-created skill files."""
         skills_dir = context.get("skills_dir") or context.get("user_skills_dir")
         if not skills_dir:
             return SkillResult(success=False, message="Directorio de skills no configurado.")
@@ -264,21 +227,13 @@ class SkillCreatorSkill(BaseSkill):
 
         return SkillResult(success=True, message="\n".join(lines))
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _clean_code(raw: str) -> str:
-        """Strip markdown code fences and leading/trailing whitespace."""
         code = raw.strip()
 
-        # Remove ```python ... ``` wrappers
         if code.startswith("```"):
             lines = code.split("\n")
-            # Remove first line (```python)
             lines = lines[1:]
-            # Remove last line if it's ```
             if lines and lines[-1].strip() == "```":
                 lines = lines[:-1]
             code = "\n".join(lines)
@@ -287,19 +242,14 @@ class SkillCreatorSkill(BaseSkill):
 
     @staticmethod
     def _derive_filename(code: str, description: str) -> str:
-        """Derive a Python filename from the skill class name or description."""
-        # Try to extract class name from code
         match = re.search(r"class\s+(\w+)\s*\(", code)
         if match:
             class_name = match.group(1)
-            # Convert CamelCase to snake_case
             name = re.sub(r"(?<!^)(?=[A-Z])", "_", class_name).lower()
-            # Remove "skill" suffix to avoid redundancy, then re-add it
             name = re.sub(r"_?skill$", "", name)
             if name:
                 return f"{name}_skill.py"
 
-        # Fallback: derive from description
         words = re.sub(r"[^a-z0-9\s]", "", description.lower()).split()[:3]
         name = "_".join(words) if words else "custom"
         return f"{name}_skill.py"

@@ -1,9 +1,4 @@
-"""Abstract base class for messaging channels.
-
-Every messaging integration (Telegram, WhatsApp, etc.) must subclass
-``Channel`` and implement all abstract methods so the assistant core
-can interact with any channel uniformly.
-"""
+"""Abstract base class for messaging channels."""
 
 from __future__ import annotations
 
@@ -14,7 +9,6 @@ from typing import Any, Callable, Coroutine
 
 @dataclass
 class IncomingMessage:
-    """Normalised representation of a message received from any channel."""
 
     chat_id: str
     sender_id: str
@@ -31,7 +25,7 @@ MessageHandler = Callable[[IncomingMessage], Coroutine[Any, Any, None]]
 
 
 class Channel(ABC):
-    """Abstract messaging channel."""
+
 
     @abstractmethod
     async def start(self) -> None: ...

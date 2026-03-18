@@ -1,16 +1,4 @@
-"""
-Persistent Claude Code CLI session.
-
-Runs Claude Code as a SEPARATE persistent instance using stream-json
-bidirectional protocol. Does NOT interfere with the user's own
-Claude Code CLI session (multiple instances can run simultaneously).
-
-Architecture:
-- Spawns `claude` with --input-format stream-json --output-format stream-json
-- Process stays alive — maintains context across messages
-- Communicates via stdin/stdout JSON
-- Falls back to `claude -p` one-shot if persistent mode fails
-"""
+"""Persistent Claude Code CLI session via stream-json protocol."""
 
 import asyncio
 import json
@@ -27,12 +15,6 @@ _IS_WINDOWS = sys.platform == "win32"
 
 
 def _resolve_claude_path(cli_path: str) -> str:
-    """Resolve the claude CLI executable path, handling Windows quirks.
-
-    On Windows, Claude Code installs as 'claude.cmd' (a batch wrapper).
-    shutil.which() finds it correctly; we just need to make sure we use
-    the full path so asyncio.create_subprocess_exec works without a shell.
-    """
     if cli_path != "claude":
         return cli_path  # Explicit path — trust caller
 
@@ -71,18 +53,11 @@ class ClaudeBridge:
 
     @staticmethod
     async def _create_subprocess(cmd: list[str], **kwargs):
-        """Create a subprocess, handling Windows .cmd wrapper quirks.
-
-        On Windows, batch files (.cmd) cannot be launched directly with
-        create_subprocess_exec — they require cmd.exe to interpret them.
-        We detect this and prepend 'cmd /c' automatically.
-        """
         if _IS_WINDOWS and cmd and str(cmd[0]).lower().endswith(".cmd"):
             cmd = ["cmd", "/c"] + cmd
         return await asyncio.create_subprocess_exec(*cmd, **kwargs)
 
     async def start_session(self):
-        """Start the persistent Claude Code session."""
         if self._process and self._process.returncode is None:
             return  # Already running
 
@@ -106,7 +81,6 @@ class ClaudeBridge:
         log.info("claude_bridge.session_started", pid=self._process.pid)
 
     async def stop_session(self):
-        """Stop the persistent session."""
         if self._process and self._process.returncode is None:
             self._process.stdin.close()
             try:
@@ -119,14 +93,12 @@ class ClaudeBridge:
         log.info("claude_bridge.session_stopped")
 
     async def ask(self, prompt, system_prompt="", timeout=None, complex_task=False):
-        """Send a message to the persistent session and get response."""
         timeout = timeout or self._default_timeout
         if complex_task:
             timeout = max(timeout, 1200)
 
-        async with self._lock:  # One request at a time
+        async with self._lock:
             try:
-                # Try persistent session first
                 if self._session_active and self._process and self._process.returncode is None:
                     return await self._send_to_session(prompt, system_prompt, timeout)
             except asyncio.CancelledError:
@@ -134,12 +106,9 @@ class ClaudeBridge:
             except Exception:
                 log.warning("claude_bridge.session_failed_using_oneshot", exc_info=True)
 
-            # Fallback to one-shot
             return await self._oneshot(prompt, system_prompt, timeout, complex_task=complex_task)
 
     async def _send_to_session(self, prompt, system_prompt, timeout):
-        """Send message to persistent session via stdin JSON."""
-        # Build the message according to stream-json input format
         message = {
             "type": "user_message",
             "content": prompt,
@@ -147,12 +116,10 @@ class ClaudeBridge:
         if system_prompt:
             message["system"] = system_prompt
 
-        # Write to stdin
         line = json.dumps(message) + "\n"
         self._process.stdin.write(line.encode())
         await self._process.stdin.drain()
 
-        # Read response chunks until we get a result
         response_text = ""
         deadline = time.time() + timeout
 
@@ -176,13 +143,11 @@ class ClaudeBridge:
                 chunk = json.loads(line)
                 msg_type = chunk.get("type", "")
 
-                # Collect text from assistant messages
                 if msg_type == "assistant" and "content" in chunk:
                     for block in chunk["content"]:
                         if isinstance(block, dict) and block.get("type") == "text":
                             response_text += block["text"]
 
-                # Result message = final response
                 if msg_type == "result":
                     result_text = chunk.get("result", "")
                     if result_text:
@@ -198,7 +163,6 @@ class ClaudeBridge:
         return response_text
 
     async def _oneshot(self, prompt, system_prompt, timeout, complex_task=False):
-        """Fallback: one-shot claude -p call."""
         max_turns = '200' if complex_task else '100'
         cmd = [
             self._cli, '-p', prompt,
@@ -229,7 +193,6 @@ class ClaudeBridge:
         return stdout.decode().strip()
 
     async def execute_in_project(self, task, project_path, system_prompt="", timeout=1200):
-        """Execute task in specific project directory (uses one-shot with --add-dir)."""
         cmd = [
             self._cli, '-p', task,
             '--output-format', 'text',
@@ -259,7 +222,6 @@ class ClaudeBridge:
         return stdout.decode().strip()
 
     async def check_available(self):
-        """Check if claude CLI is installed."""
         try:
             proc = await self._create_subprocess(
                 [self._cli, '--version'],

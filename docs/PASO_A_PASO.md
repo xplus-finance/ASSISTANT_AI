@@ -1,50 +1,50 @@
-# Paso a Paso -- Poner en Marcha tu Asistente Personal IA
+# Paso a Paso -- Poner en Marcha tu Asistente Personal
 
 ## Que necesitas
 
-- Una computadora con Windows 10+, Linux (Ubuntu, Debian, Fedora, Arch) o macOS
-- Python 3.12 o superior
-- Una suscripcion activa de Claude Pro o Max (para Claude Code CLI)
-- Una cuenta de Telegram (recomendado) o WhatsApp (ver opciones abajo)
+| Requisito | Detalle |
+|-----------|---------|
+| OS | Windows 10+, Linux (Ubuntu, Debian, Fedora, Arch) o macOS 13+ |
+| Python | 3.12 o superior |
+| Claude Code CLI | Suscripcion Pro o Max activa |
+| Canal | Telegram (recomendado), WhatsApp Baileys o WhatsApp Business API |
 
 ---
 
 ## Instalacion
 
-El proyecto incluye un instalador interactivo que configura todo automaticamente: dependencias del sistema, entorno de Python, canal de mensajeria, audio y seguridad.
-
 ### Linux / macOS
 
 ```bash
-cd /ruta/al/personal-ai-assistant
+cd /ruta/al/ASSISTANT_AI
 bash install.sh
 ```
 
-El instalador detecta tu gestor de paquetes (apt, dnf, pacman, brew) e instala las dependencias faltantes (ffmpeg, bubblewrap) de forma automatica.
+Detecta el gestor de paquetes (apt, dnf, pacman, brew) e instala dependencias faltantes (ffmpeg, bubblewrap) automaticamente.
 
 ### Windows
 
 ```powershell
-cd C:\ruta\al\personal-ai-assistant
+cd C:\ruta\al\ASSISTANT_AI
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-En Windows, el instalador usa `winget` para dependencias como ffmpeg y crea un archivo `start.bat` para iniciar con doble clic.
+Usa `winget` para dependencias como ffmpeg y crea `start.bat` para iniciar con doble clic.
 
 ### Que hace el instalador (10 pasos)
 
 1. Verifica Python 3.12+, ffmpeg y bubblewrap (sandbox de seguridad)
-2. Verifica que Claude Code CLI este instalado y autenticado
-3. Te permite elegir canal de mensajeria: Telegram, WhatsApp Baileys, WhatsApp Business API o todos
-4. Configura el canal elegido paso a paso, con validacion en vivo (verifica tokens contra la API de Telegram, envia mensaje de prueba, etc.)
-5. Crea el entorno virtual de Python
-6. Instala todas las dependencias
-7. Configura el modelo de reconocimiento de voz (Whisper) con opcion de descarga inmediata
+2. Verifica Claude Code CLI instalado y autenticado
+3. Permite elegir canal: Telegram, WhatsApp Baileys, WhatsApp Business API o todos
+4. Configura el canal con validacion en vivo (verifica tokens contra APIs, envia mensaje de prueba)
+5. Crea entorno virtual de Python
+6. Instala dependencias
+7. Configura modelo de reconocimiento de voz (faster-whisper) con opcion de descarga inmediata
 8. Configura zona horaria
 9. Configura seguridad: PIN opcional y clave de cifrado para la base de datos
-10. Crea directorios de datos y ofrece inicio automatico (systemd en Linux, Task Scheduler en Windows)
+10. Crea directorios de datos y ofrece inicio automatico (systemd en Linux, launchd en macOS, Task Scheduler en Windows)
 
-El instalador es idempotente: puedes ejecutarlo varias veces sin problema. Si ya existe un `.env`, ofrece reconfigurarlo con backup automatico.
+El instalador es idempotente. Si ya existe un `.env`, ofrece reconfigurarlo con backup automatico.
 
 ---
 
@@ -53,7 +53,7 @@ El instalador es idempotente: puedes ejecutarlo varias veces sin problema. Si ya
 ### Linux / macOS
 
 ```bash
-cd /ruta/al/personal-ai-assistant
+cd /ruta/al/ASSISTANT_AI
 source .venv/bin/activate
 python -m src.main
 ```
@@ -66,122 +66,144 @@ Doble clic en `start.bat` o desde PowerShell:
 .venv\Scripts\python.exe -m src.main
 ```
 
-El `start.bat` en Windows hace `git pull` automatico al arrancar para mantener el codigo actualizado.
+`start.bat` hace `git pull` automatico al arrancar.
 
 ---
 
 ## Primer mensaje (onboarding)
 
-La primera vez que hables con el bot por Telegram (o WhatsApp), se activa el asistente de configuracion inicial:
+La primera vez que hables con el bot se activa la configuracion inicial:
 
-1. Te pregunta como quieres que se llame el asistente
-2. Te pregunta tu nombre
-3. Te pregunta tu area de trabajo o intereses
-4. Te pregunta tus preferencias de comunicacion (texto/audio, formal/informal)
-5. Te pregunta la zona horaria (si no la configuraste en la instalacion)
-6. Opcion de configurar un PIN de seguridad
+1. Nombre del asistente
+2. Tu nombre
+3. Area de trabajo o intereses
+4. Preferencias de comunicacion (texto/audio, formal/informal)
+5. Zona horaria (si no se configuro en la instalacion)
+6. PIN de seguridad (opcional)
 
-Despues del onboarding, el asistente esta listo para usar.
-
----
-
-## Canales de mensajeria disponibles
-
-### Telegram (recomendado)
-
-La opcion mas rapida y segura. Gratis, sin riesgo de ban. Se configura en 2 minutos durante la instalacion. Guia completa: [TELEGRAM_SETUP.md](TELEGRAM_SETUP.md)
-
-### WhatsApp con Baileys (no oficial)
-
-Usa ingenieria inversa del protocolo de WhatsApp Web. Requiere un numero virtual desechable. Riesgo medio de ban del numero. Guia completa: [WHATSAPP_BAILEYS_SETUP.md](WHATSAPP_BAILEYS_SETUP.md)
-
-### WhatsApp Business API (oficial)
-
-API oficial de Meta, cero riesgo de ban. Requiere cuenta de negocio verificada y Cloudflare Tunnel. Guia completa: [WHATSAPP_BUSINESS_SETUP.md](WHATSAPP_BUSINESS_SETUP.md)
+Despues del onboarding, el asistente esta operativo.
 
 ---
 
-## Capacidades del asistente
+## Canales de mensajeria
 
-### Comandos principales
+| Canal | Costo | Riesgo | Setup | Guia |
+|-------|-------|--------|-------|------|
+| Telegram | Gratis | Ninguno | 2 min | [TELEGRAM_SETUP.md](TELEGRAM_SETUP.md) |
+| WhatsApp Baileys | ~$2/mes | Medio | 15 min | [WHATSAPP_BAILEYS_SETUP.md](WHATSAPP_BAILEYS_SETUP.md) |
+| WhatsApp Business API | ~$5-20/mes | Ninguno | 1-2 hrs | [WHATSAPP_BUSINESS_SETUP.md](WHATSAPP_BUSINESS_SETUP.md) |
+
+---
+
+## Skills integradas (14)
+
+| Skill | Funcion | Activacion |
+|-------|---------|------------|
+| terminal | Comandos del sistema en sandbox | `!cmd <comando>` |
+| files | Leer, escribir, buscar archivos | `lee el archivo [ruta]` |
+| memory | Memoria permanente | `!memoria`, `!recuerda [algo]` |
+| tasks | Tareas y recordatorios | `!tareas`, `!tarea nueva [desc]` |
+| learning | Busqueda web y base de conocimiento | `!busca [tema]`, `!aprende [url]` |
+| desktop_control | Capturas de pantalla, ventanas, teclado | `!screenshot` |
+| mcp_creator | Generar e instalar servidores MCP | `!mcp crear [desc]` |
+| skill_creator | Crear skills en runtime | `!skill crear [desc]` |
+| claude_code | Integracion con Claude Code CLI | Lenguaje natural sobre codigo |
+| system_monitor | Estado del sistema (CPU, RAM, disco) | `!status` |
+| file_search | Busqueda avanzada de archivos | `busca archivos [patron]` |
+| git | Operaciones git completas | `git status`, lenguaje natural |
+| network | Diagnostico de red | `haz ping a [host]` |
+| package_manager | Gestionar paquetes del sistema | `instala [paquete]` |
+
+---
+
+## Comandos
 
 ```
 INFORMACION
-!status          -- estado del asistente y sus modulos
-!yo              -- tu perfil como lo ve el asistente
-!memoria         -- que recuerda de ti
-!recuerda [algo] -- guardar algo en memoria permanente
+  !status          -- estado del asistente y recursos del sistema
+  !yo              -- tu perfil como lo ve el asistente
+  !help            -- lista de comandos
+  !memoria         -- que recuerda de ti
+  !recuerda [algo] -- guardar en memoria permanente
 
 TAREAS
-!tareas          -- ver todas las tareas
-!tarea nueva [X] -- crear tarea
+  !tareas          -- ver todas las tareas
+  !tarea nueva [X] -- crear tarea
+  recuerdame [algo] a las [hora] -- recordatorio en lenguaje natural
 
 AUDIO
-!voz on          -- responder siempre con audio
-!voz off         -- responder siempre con texto
-!voz auto        -- el asistente decide segun el contexto
+  !voz on          -- responder siempre con audio
+  !voz off         -- responder siempre con texto
+  !voz auto        -- el asistente decide segun contexto
 
 SKILLS
-!skills          -- ver skills disponibles
-!skill crear     -- crear una nueva skill en tiempo de ejecucion
+  !skills          -- ver skills disponibles
+  !skill crear     -- crear nueva skill en runtime
 
 MCP
-!mcp crear       -- crear un servidor MCP, instalarlo y registrarlo automaticamente
+  !mcp crear       -- crear servidor MCP, instalarlo y registrarlo
+  !mcp list        -- listar servidores MCP instalados
 
 APRENDIZAJE
-!busca [tema]    -- buscar en la web y almacenar en base de conocimiento
+  !busca [tema]    -- buscar en la web
+  !aprende [url]   -- obtener y almacenar contenido de URL
 
 SISTEMA
-!cmd [comando]   -- ejecutar comando en terminal (con sandbox de seguridad)
-!logs            -- ver ultimos comandos ejecutados
+  !cmd [comando]   -- ejecutar en terminal (sandbox)
+  !screenshot      -- captura de pantalla
+  !logs            -- ultimos comandos ejecutados
 ```
 
-### Audio
+---
 
-- Transcripcion de voz con faster-whisper (procesamiento 100% local, nada se envia a terceros)
-- Modelos disponibles: tiny (75 MB), small (500 MB), medium (1.5 GB), large-v3 (3 GB)
-- Sintesis de voz (TTS) con multiples motores: chatterbox, piper, gTTS, espeak, pyttsx3 (Windows)
-- Control de voz por lenguaje natural: cambiar tono (grave/agudo), velocidad y genero
+## Audio
 
-### Seguridad (8 capas)
+- Transcripcion con faster-whisper (100% local, nada se envia a terceros)
+- Modelos: tiny (75 MB), small (500 MB), medium (1.5 GB), large-v3 (3 GB)
+- TTS con multiples motores: chatterbox, espeak, gTTS, pyttsx3 (Windows)
+- Control por lenguaje natural: tono (grave/agudo), velocidad, genero
+- GPU NVIDIA con CUDA acelera la transcripcion. Sin GPU funciona con CPU.
 
-1. Autenticacion por Chat ID de Telegram o numero autorizado de WhatsApp
-2. PIN de seguridad con hash bcrypt para operaciones sensibles
-3. Sanitizacion de entrada (validacion de comandos contra lista negra)
-4. Deteccion de inyeccion de prompts
-5. Escaneo de salida (previene filtracion de datos sensibles)
-6. Rate limiting (limite de mensajes por minuto)
-7. Permisos de archivos endurecidos automaticamente en cada arranque (Linux/macOS)
-8. Ejecucion en sandbox con bubblewrap (Linux) o subprocess con timeout (Windows/macOS)
+---
 
-### Auto-evolucion
+## Seguridad (8 capas)
 
-- Hot-reload: el asistente detecta cambios en su propio codigo y recarga modulos en caliente
-- Los modulos utilitarios y de skills se recargan sin reiniciar
-- Los modulos core (gateway, bridge, seguridad) activan un reinicio completo del proceso
-- Validacion de sintaxis con `ast.parse()` antes de aplicar cualquier cambio
-- Backup automatico de modulos antes de reemplazarlos
+| Capa | Mecanismo |
+|------|-----------|
+| Autenticacion | Chat ID de Telegram o numero autorizado de WhatsApp |
+| PIN | Hash bcrypt para operaciones sensibles |
+| Sanitizacion | Validacion de comandos, path traversal prevention, FTS5 sanitization |
+| Prompt injection | 28 patrones regex, registro en audit log |
+| Escaneo de salida | Deteccion de tokens, keys y passwords antes de enviar |
+| Rate limiting | Limite configurable de mensajes por minuto |
+| Permisos | `.env` (600), `data/` (700), `logs/` (700) — automatico al arrancar (Linux/macOS) |
+| Sandbox | bubblewrap (Linux), subprocess con timeout (Windows/macOS) |
 
-### Skills en tiempo de ejecucion
+---
 
-Con `!skill crear`, el asistente genera nuevas habilidades usando Claude, las valida, las guarda en el directorio `skills/` y las carga sin reiniciar. Las skills personalizadas persisten entre reinicios.
+## Auto-evolucion
 
-### Servidores MCP
+- Hot-reload: detecta cambios en su propio codigo y recarga modulos en caliente
+- Modulos utilitarios y skills: recarga sin reiniciar
+- Modulos core (gateway, bridge, seguridad): reinicio completo del proceso
+- Validacion con `ast.parse()` antes de aplicar cambios
+- Backup automatico en `.backups/` antes de reemplazar
+- Skills runtime: `!skill crear` genera, valida, guarda y carga sin reiniciar
+- MCP servers: `!mcp crear` genera con FastMCP, instala venv + deps, registra en Claude Code
 
-Con `!mcp crear`, el asistente puede generar servidores MCP (Model Context Protocol) completos con FastMCP, instalarlos en `mcps/` y registrarlos automaticamente en la configuracion de Claude Code.
+---
 
-### Control de escritorio
+## Memoria
 
-- Capturas de pantalla (scrot en Linux, screencapture en macOS, pyautogui en Windows)
-- Gestion de ventanas (xdotool/wmctrl en Linux, osascript en macOS, pyautogui en Windows)
-- Escaneo de pestanas del navegador
-- Escritura en teclado
+| Tipo | Persistencia | Descripcion |
+|------|-------------|-------------|
+| Hechos permanentes | Indefinida | Guardados con `!recuerda` |
+| Procedimientos | Indefinida | Lecciones de errores, no se repiten |
+| Resumenes de sesion | Indefinida | Resumen automatico al cerrar sesion |
+| Historial cruzado | 7 dias | Contexto de sesiones anteriores |
+| Base de conocimiento | Indefinida | De busquedas web y URLs |
 
-### Base de datos
-
-- APSW (driver SQLite avanzado) con cifrado opcional via SQLCipher (AES-256)
-- La clave de cifrado se genera automaticamente durante la instalacion
-- Todos los datos (conversaciones, memoria, tareas) se almacenan localmente
+SQLite local con cifrado AES-256 opcional (SQLCipher via APSW). Indices FTS5.
 
 ---
 
@@ -193,14 +215,19 @@ Con `!mcp crear`, el asistente puede generar servidores MCP (Model Context Proto
 sudo cp systemd/ai-assistant.service /etc/systemd/system/
 sudo systemctl enable ai-assistant
 sudo systemctl start ai-assistant
-
-# Ver logs en vivo
 journalctl -u ai-assistant -f
+```
+
+### macOS (launchd)
+
+```bash
+cp launchd/com.assistant.ai.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.assistant.ai.plist
 ```
 
 ### Windows (Task Scheduler)
 
-El instalador puede configurar una tarea programada que inicia el asistente al abrir sesion. Tambien puedes usar `start.bat` o `start_hidden.vbs` (sin ventana de consola).
+El instalador configura una tarea programada al iniciar sesion. Alternativas: `start.bat` o `start_hidden.vbs` (sin ventana de consola).
 
 ### Alternativa rapida (tmux/screen)
 
@@ -208,7 +235,7 @@ El instalador puede configurar una tarea programada que inicia el asistente al a
 tmux new -s asistente
 source .venv/bin/activate
 python -m src.main
-# Ctrl+B, luego D para desconectar
+# Ctrl+B, D para desconectar
 # tmux attach -t asistente para reconectar
 ```
 
@@ -219,28 +246,24 @@ python -m src.main
 ### "Claude Code CLI no encontrado"
 
 ```bash
-# Verificar instalacion
 claude --version
-
-# Si no esta instalado
+# Si no esta:
 npm install -g @anthropic-ai/claude-code
-
-# Autenticarse (abre el navegador)
+# Autenticarse:
 claude
 ```
 
 ### "El bot no responde en Telegram"
 
-1. Verifica que el token y el chat_id en `.env` son correctos
-2. Verifica que el proceso esta corriendo
-3. Revisa los logs: `tail -f logs/app.log`
-4. Asegurate de haber enviado `/start` al bot al menos una vez
+1. Verificar que el proceso esta corriendo
+2. Verificar token y chat_id en `.env`
+3. Revisar logs: `tail -f logs/app.log`
+4. Confirmar que enviaste `/start` al bot
 
 ### "Error de base de datos"
 
 ```bash
-# Si la DB esta corrupta, borrarla y empezar de nuevo
-# (se pierde la memoria del asistente pero se regenera)
+# Borrar DB corrupta (se pierde memoria, se regenera estructura)
 rm data/assistant.db
 python -m src.main
 ```
@@ -252,14 +275,11 @@ source .venv/bin/activate
 python -c "from faster_whisper import WhisperModel; WhisperModel('small')"
 ```
 
-Si usas GPU NVIDIA con CUDA, faster-whisper la detecta y la usa automaticamente. Sin GPU funciona con CPU (mas lento pero operativo).
-
 ### "El bridge de WhatsApp no conecta"
 
 ```bash
 curl http://127.0.0.1:3001/health
-
-# Si dice "disconnected", borrar sesion y re-escanear QR
+# Si dice "disconnected":
 cd whatsapp-bridge
 rm -rf auth_info/
 npm start
@@ -267,11 +287,7 @@ npm start
 
 ### Permisos en Linux/macOS
 
-El asistente endurece permisos automaticamente al arrancar:
-- `data/` y `logs/`: modo 700 (solo el propietario)
-- `.env`: modo 600 (solo lectura/escritura del propietario)
-
-Si tienes problemas de permisos, ejecuta:
+El asistente endurece permisos al arrancar. Si hay problemas:
 
 ```bash
 chmod 700 data/ logs/

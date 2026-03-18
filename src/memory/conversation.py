@@ -1,8 +1,4 @@
-"""
-Conversation storage and retrieval.
-
-Manages the conversations table with full-text search support via FTS5.
-"""
+"""Conversation storage with FTS5 full-text search."""
 
 from __future__ import annotations
 
@@ -16,7 +12,7 @@ log = structlog.get_logger("assistant.memory.conversation")
 
 
 class ConversationStore:
-    """Read/write access to the conversation history."""
+
 
     def __init__(self, engine: MemoryEngine) -> None:
         self._engine = engine

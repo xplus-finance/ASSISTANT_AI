@@ -1,4 +1,4 @@
-"""Central orchestrator for the Personal AI Assistant."""
+"""Central gateway orchestrating all assistant subsystems."""
 
 from __future__ import annotations
 
@@ -134,7 +134,20 @@ _COMPLEX_KEYWORDS = [
 
 def _compute_next_run(pattern: str) -> str | None:
     """Compute next run time from recurrence pattern. Returns ISO datetime string or None."""
-    return None  # TODO: implement recurrence parsing
+    if not pattern:
+        return None
+    from datetime import datetime, timedelta
+    now = datetime.now()
+    p = pattern.lower().strip()
+    if "diario" in p or "cada día" in p or "daily" in p:
+        return (now + timedelta(days=1)).isoformat()
+    if "semanal" in p or "cada semana" in p or "weekly" in p:
+        return (now + timedelta(weeks=1)).isoformat()
+    if "mensual" in p or "cada mes" in p or "monthly" in p:
+        return (now + timedelta(days=30)).isoformat()
+    if "cada hora" in p or "hourly" in p:
+        return (now + timedelta(hours=1)).isoformat()
+    return None
 
 
 class Gateway:
@@ -167,6 +180,8 @@ class Gateway:
             max_per_minute=getattr(config, "max_messages_per_minute", 20),
         )
         self._message_counter: int = 0
+        self._env_cache: str = ""
+        self._env_cache_time: float = 0.0
 
     async def start(self) -> None:
         log.info("gateway.starting")
@@ -260,6 +275,9 @@ class Gateway:
                 skills_dir=getattr(cfg, "skills_dir", "skills"),
                 memory_engine=self.memory,
             )
+            self.skill_registry.load_built_in()
+            self.skill_registry.load_user_skills()
+            self.skill_registry.start_watching()
         except Exception:
             log.info("gateway.skill_registry_not_available", exc_info=True)
 
@@ -386,6 +404,18 @@ class Gateway:
                 await self._send(channel_name, chat_id, "No pude transcribir el audio.")
                 return
 
+        image_path = getattr(message, "image_path", None)
+        if image_path:
+            text = f"{text}\n[El usuario envió una imagen: {image_path}]" if text else f"[El usuario envió una imagen: {image_path}]"
+
+        document_path = getattr(message, "document_path", None)
+        if document_path:
+            try:
+                doc_content = Path(document_path).read_text(encoding="utf-8", errors="replace")[:5000]
+                text = f"{text}\n[Documento adjunto ({Path(document_path).name}):\n{doc_content}]"
+            except Exception:
+                text = f"{text}\n[El usuario envió un documento: {document_path}]"
+
         if not text.strip():
             return
 
@@ -465,11 +495,16 @@ class Gateway:
         # so we can detect any new ones created during the task.
         screenshots_before = _snapshot_screenshot_files()
 
+        typing_stop = asyncio.Event()
+        typing_task = asyncio.create_task(self._keep_typing(channel_name, chat_id, typing_stop))
         try:
             response_text = await self._ask_claude(text)
         except asyncio.CancelledError:
             log.warning("gateway.request_cancelled", chat_id=chat_id)
             return
+        finally:
+            typing_stop.set()
+            typing_task.cancel()
         if not response_text:
             response_text = "No pude generar una respuesta. Intenta de nuevo."
         elif "max turns" in response_text.lower() or "reached max" in response_text.lower():
@@ -587,9 +622,11 @@ class Gateway:
             log.exception("gateway.claude_failed")
             return "Perdona, tuve un problema procesando tu solicitud. Dame un momento e intenta de nuevo."
 
-    @staticmethod
-    def _detect_environment() -> str:
-        """Detect the current system environment dynamically."""
+    def _detect_environment(self) -> str:
+        """Detect the current system environment dynamically (cached 60s)."""
+        now = time.time()
+        if self._env_cache and (now - self._env_cache_time) < 60:
+            return self._env_cache
         import platform as plat
         import shutil
         import subprocess as _sp
@@ -632,6 +669,8 @@ class Gateway:
         )
         if monitors:
             result += f"\n{monitors}"
+        self._env_cache = result
+        self._env_cache_time = now
         return result
 
     def _build_system_prompt(self, ctx: Any) -> str:
@@ -706,6 +745,10 @@ class Gateway:
             )
             if projects_text:
                 parts.append(f"Proyectos activos:\n{projects_text}")
+
+        if hasattr(ctx, 'procedures') and ctx.procedures:
+            proc_text = "\n".join(f"- {p['fact']}" for p in ctx.procedures)
+            parts.append(f"PROCEDIMIENTOS APRENDIDOS (usa estos, NO repitas errores):\n{proc_text}")
 
         # === SYSTEM PROMPT ===
         parts.append(
@@ -902,7 +945,12 @@ class Gateway:
                 "learning": self.learning_store,
                 "approval_gate": self.approval_gate,
                 "security": self.security,
+                "security_guardian": self.security,
                 "_original_text": text,
+                "send_fn": lambda msg: self._send(channel, chat_id, msg),
+                "receive_fn": None,
+                "skills_dir": getattr(self.skill_registry, "_user_skills_dir", None),
+                "registry": self.skill_registry,
             })
             data = getattr(result, "data", None) or {}
             result_type = data.get("type", "")
@@ -1002,6 +1050,15 @@ class Gateway:
                 await ch.send_typing(str(chat_id))
             except Exception:
                 pass  # typing indicator is best-effort
+
+    async def _keep_typing(self, channel_name: str, chat_id: Any, stop_event: asyncio.Event) -> None:
+        """Send typing indicator every 5 seconds until stop_event is set."""
+        while not stop_event.is_set():
+            await self._send_typing(channel_name, chat_id)
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                pass
 
     async def _check_scheduled_tasks(self) -> None:
         if self.tasks is None:

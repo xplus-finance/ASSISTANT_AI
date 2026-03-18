@@ -23,11 +23,7 @@ _BUILT_IN_DIR = Path(__file__).resolve().parent / "built_in"
 
 
 class SkillRegistry:
-    """Central registry for all assistant skills.
 
-    Loads built-in skills from ``src/skills/built_in/``, user skills from a
-    configurable directory, and supports hot-reload via ``watchdog``.
-    """
 
     def __init__(
         self,
@@ -123,7 +119,6 @@ class SkillRegistry:
             log.info("registry.hot_reloaded", skill=skill.name)
 
     def register(self, skill: BaseSkill) -> None:
-        """Register a skill (replaces existing with same name for hot-reload)."""
         with self._lock:
             replacing = skill.name in self._skills
             self._skills[skill.name] = skill
@@ -166,7 +161,6 @@ class SkillRegistry:
             return self._skills.get(name)
 
     def _load_skill_file(self, path: str) -> BaseSkill | None:
-        """Dynamically import a .py file and return the first concrete BaseSkill found."""
         path = os.path.abspath(path)
         module_name = f"_skill_{Path(path).stem}_{id(path)}"
 
@@ -200,7 +194,6 @@ class SkillRegistry:
             sys.modules.pop(module_name, None)
 
     def _instantiate_skill(self, cls: type) -> BaseSkill | None:
-        """Instantiate a skill class, injecting dependencies from context."""
         try:
             sig = inspect.signature(cls.__init__)
             params = list(sig.parameters.keys())

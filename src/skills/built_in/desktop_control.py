@@ -1,9 +1,4 @@
-"""
-Desktop control skill — expose desktop commands via Telegram.
-
-Allows the user to take screenshots, list windows, switch browser tabs,
-type text, and send messages to another Claude Code instance.
-"""
+"""Desktop control skill: screenshots, windows, tabs, keyboard."""
 
 from __future__ import annotations
 
@@ -17,7 +12,7 @@ log = structlog.get_logger("assistant.skills.desktop_control")
 
 
 class DesktopControlSkill(BaseSkill):
-    """Expose desktop control actions as Telegram commands."""
+
 
     @property
     def name(self) -> str:
@@ -39,13 +34,11 @@ class DesktopControlSkill(BaseSkill):
         ]
 
     async def execute(self, args: str, context: dict[str, Any]) -> SkillResult:
-        """Route to the correct desktop action based on the original trigger."""
         from src.core.desktop_control import DesktopControl
 
         desktop = DesktopControl()
         original = context.get("_original_text", "").lower().strip()
 
-        # Determine subcommand from the original trigger
         if original.startswith(("!screenshot", "!captura")):
             return await self._do_screenshot(desktop)
         elif original.startswith(("!ventanas", "!windows")):
@@ -59,7 +52,6 @@ class DesktopControlSkill(BaseSkill):
         elif original.startswith("!claude"):
             return await self._do_claude(desktop, args)
 
-        # Fallback heuristics when _original_text is not available
         args_lower = args.lower().strip()
         if not args_lower:
             return await self._do_screenshot(desktop)
@@ -68,12 +60,7 @@ class DesktopControlSkill(BaseSkill):
         else:
             return await self._do_type(desktop, args)
 
-    # ------------------------------------------------------------------
-    # Subcommands
-    # ------------------------------------------------------------------
-
     async def _do_screenshot(self, desktop: Any) -> SkillResult:
-        """Take a screenshot and return the image path."""
         try:
             path = await desktop.take_screenshot()
             return SkillResult(
@@ -85,7 +72,6 @@ class DesktopControlSkill(BaseSkill):
             return SkillResult(success=False, message=f"Error al tomar captura: {exc}")
 
     async def _do_list_windows(self, desktop: Any) -> SkillResult:
-        """List all open windows."""
         try:
             windows = await desktop.list_windows()
             if not windows:
@@ -99,7 +85,6 @@ class DesktopControlSkill(BaseSkill):
             return SkillResult(success=False, message=f"Error al listar ventanas: {exc}")
 
     async def _do_tab(self, desktop: Any, args: str) -> SkillResult:
-        """Switch browser tab: next, prev, or specific number."""
         args = args.strip().lower()
         try:
             if args.isdigit():
@@ -116,7 +101,6 @@ class DesktopControlSkill(BaseSkill):
             return SkillResult(success=False, message=f"Error al cambiar pestaña: {exc}")
 
     async def _do_type(self, desktop: Any, args: str) -> SkillResult:
-        """Type text using the keyboard."""
         text = args.strip()
         if not text:
             return SkillResult(
@@ -130,7 +114,6 @@ class DesktopControlSkill(BaseSkill):
             return SkillResult(success=False, message=f"Error al escribir texto: {exc}")
 
     async def _do_scan_all_tabs(self, desktop: Any) -> SkillResult:
-        """Scan ALL browser tabs — tries CDP first, falls back to visual scan."""
         # Intento 1: Chrome DevTools Protocol (instantáneo, sin mover nada)
         cdp_tabs = await desktop.list_browser_tabs_cdp()
         if cdp_tabs:
@@ -170,7 +153,6 @@ class DesktopControlSkill(BaseSkill):
             return SkillResult(success=False, message=f"Error al escanear pestañas: {exc}")
 
     async def _do_claude(self, desktop: Any, args: str) -> SkillResult:
-        """Send a message to the user's Claude Code instance in VS Code."""
         message = args.strip()
         if not message:
             return SkillResult(

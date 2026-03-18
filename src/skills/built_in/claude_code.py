@@ -1,9 +1,4 @@
-"""
-Claude Code integration skill — delegate project tasks to the Claude CLI.
-
-Uses ``ClaudeBridge`` to execute tasks within a project context, with
-tool restrictions and turn limits for safety.
-"""
+"""Claude Code integration skill: delegate tasks to the CLI."""
 
 from __future__ import annotations
 
@@ -19,7 +14,7 @@ log = structlog.get_logger("assistant.skills.claude_code")
 
 
 class ClaudeCodeSkill(BaseSkill):
-    """Delegate programming and project tasks to Claude Code CLI."""
+
 
     def __init__(self, bridge: ClaudeBridge | None = None) -> None:
         self._bridge = bridge
@@ -37,18 +32,6 @@ class ClaudeCodeSkill(BaseSkill):
         return ["!claude", "!code", "!proyecto"]
 
     async def execute(self, args: str, context: dict[str, Any]) -> SkillResult:
-        """
-        Execute a Claude Code task.
-
-        Sub-commands:
-            ``!claude <prompt>``      — ask Claude a question
-            ``!code <path> <task>``   — execute a task in a project directory
-            ``!proyecto <path>``      — analyze/work on a project
-            ``!claude status``        — check if Claude CLI is available
-
-        Context keys used:
-            ``bridge`` (ClaudeBridge): Pre-configured bridge instance.
-        """
         bridge = self._bridge or context.get("bridge") or context.get("claude_bridge")
         if bridge is None:
             bridge = ClaudeBridge()
@@ -76,12 +59,7 @@ class ClaudeCodeSkill(BaseSkill):
         else:
             return await self._ask(bridge, args)
 
-    # ------------------------------------------------------------------
-    # Sub-commands
-    # ------------------------------------------------------------------
-
     async def _ask(self, bridge: ClaudeBridge, prompt: str) -> SkillResult:
-        """Send a direct question to Claude."""
         prompt = prompt.strip()
         if not prompt:
             return SkillResult(success=False, message="Escribe una pregunta despues de !claude")
@@ -112,7 +90,6 @@ class ClaudeCodeSkill(BaseSkill):
             return SkillResult(success=False, message=f"Error de Claude: {exc}")
 
     async def _project_task(self, bridge: ClaudeBridge, args: str) -> SkillResult:
-        """Execute a task scoped to a project directory."""
         parts = args.split(maxsplit=1)
         if not parts:
             return SkillResult(
@@ -123,7 +100,6 @@ class ClaudeCodeSkill(BaseSkill):
         project_path = parts[0]
         task = parts[1] if len(parts) > 1 else "Analiza la estructura del proyecto y describe que hace."
 
-        # Validate path
         resolved = Path(project_path).resolve()
         if not resolved.is_dir():
             return SkillResult(
@@ -160,7 +136,6 @@ class ClaudeCodeSkill(BaseSkill):
             return SkillResult(success=False, message=f"Error ejecutando tarea: {exc}")
 
     async def _analyze_project(self, bridge: ClaudeBridge, args: str) -> SkillResult:
-        """Analyze a project directory."""
         parts = args.split(maxsplit=1)
         if not parts:
             return SkillResult(
@@ -205,7 +180,6 @@ class ClaudeCodeSkill(BaseSkill):
             return SkillResult(success=False, message=f"Error analizando proyecto: {exc}")
 
     async def _check_status(self, bridge: ClaudeBridge) -> SkillResult:
-        """Check if the Claude CLI is available."""
         available = await bridge.check_available()
         if available:
             return SkillResult(

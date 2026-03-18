@@ -1,10 +1,4 @@
-"""
-Memory management skill — save facts, recall information, view profile.
-
-Integrates with ``MemoryEngine`` to persist and retrieve learned facts
-and user-profile entries using the ``learned_facts`` and ``user_profile``
-tables defined in the engine schema.
-"""
+"""Memory management skill: save facts, recall, view profile."""
 
 from __future__ import annotations
 
@@ -19,7 +13,7 @@ log = structlog.get_logger("assistant.skills.memory")
 
 
 class MemorySkill(BaseSkill):
-    """Manage the assistant's long-term memory."""
+
 
     def __init__(self, memory_engine: MemoryEngine | None = None) -> None:
         self._memory = memory_engine
@@ -37,23 +31,12 @@ class MemorySkill(BaseSkill):
         return ["!memoria", "!recuerda", "!olvida", "!yo"]
 
     async def execute(self, args: str, context: dict[str, Any]) -> SkillResult:
-        """
-        Handle memory operations.
-
-        Sub-commands:
-            ``!recuerda <hecho>``  — save a fact
-            ``!memoria buscar <query>`` — search memory
-            ``!memoria todo``  — show all facts
-            ``!olvida <id>``   — forget a fact by ID
-            ``!yo``            — show user profile
-        """
         memory = self._memory or context.get("memory")
         if memory is None:
             return SkillResult(success=False, message="Motor de memoria no disponible.")
 
-        # Determine which trigger was used
         trigger_used = ""
-        original = context.get("original_text", "").lower().strip()
+        original = context.get("_original_text", "").lower().strip()
         for t in self.triggers:
             if original.startswith(t):
                 trigger_used = t
@@ -69,12 +52,7 @@ class MemorySkill(BaseSkill):
             # !memoria — subcommands
             return self._handle_memoria(memory, args)
 
-    # ------------------------------------------------------------------
-    # Sub-command handlers
-    # ------------------------------------------------------------------
-
     def _handle_memoria(self, memory: MemoryEngine, args: str) -> SkillResult:
-        """Route ``!memoria`` sub-commands."""
         if not args:
             return self._show_stats(memory)
 
@@ -93,14 +71,12 @@ class MemorySkill(BaseSkill):
             return self._search(memory, args)
 
     def _remember(self, memory: MemoryEngine, fact: str) -> SkillResult:
-        """Save a new fact to learned_facts."""
         if not fact.strip():
             return SkillResult(
                 success=False,
                 message="Uso: !recuerda <hecho a guardar>",
             )
 
-        # Determine category heuristically
         category = self._guess_category(fact)
 
         fact_id = memory.insert_returning_id(
@@ -119,7 +95,6 @@ class MemorySkill(BaseSkill):
         )
 
     def _forget(self, memory: MemoryEngine, args: str) -> SkillResult:
-        """Delete a fact by ID."""
         args = args.strip()
         if not args:
             return SkillResult(
@@ -135,7 +110,6 @@ class MemorySkill(BaseSkill):
                 message=f"ID invalido: {args}. Debe ser un numero.",
             )
 
-        # Check existence
         row = memory.fetchone(
             "SELECT fact FROM learned_facts WHERE id = ?", (fact_id,)
         )
@@ -151,7 +125,6 @@ class MemorySkill(BaseSkill):
         )
 
     def _search(self, memory: MemoryEngine, query: str) -> SkillResult:
-        """Full-text search across facts."""
         if not query.strip():
             return SkillResult(
                 success=False,
@@ -189,7 +162,6 @@ class MemorySkill(BaseSkill):
                 f"  #{row['id']} [{row['category']}] {row['fact'][:100]}"
             )
 
-        # Update use_count for returned facts
         for row in rows:
             memory.execute(
                 """
@@ -207,7 +179,6 @@ class MemorySkill(BaseSkill):
         )
 
     def _show_all(self, memory: MemoryEngine) -> SkillResult:
-        """Show all learned facts."""
         rows = memory.fetchall_dicts(
             """
             SELECT id, category, fact, confidence, use_count
@@ -239,7 +210,6 @@ class MemorySkill(BaseSkill):
         return SkillResult(success=True, message="\n".join(lines))
 
     def _show_profile(self, memory: MemoryEngine) -> SkillResult:
-        """Show the user profile."""
         rows = memory.fetchall_dicts(
             """
             SELECT key, value, updated_at
@@ -259,7 +229,6 @@ class MemorySkill(BaseSkill):
         for row in rows:
             key = row["key"]
             value = row["value"]
-            # Don't show hashed PINs in full
             if key == "security_pin":
                 value = "****" if value else "(no configurado)"
             lines.append(f"  {key}: {value}")
@@ -267,7 +236,6 @@ class MemorySkill(BaseSkill):
         return SkillResult(success=True, message="\n".join(lines))
 
     def _show_stats(self, memory: MemoryEngine) -> SkillResult:
-        """Show memory statistics."""
         facts_count = memory.fetchone("SELECT COUNT(*) FROM learned_facts")
         profile_count = memory.fetchone(
             "SELECT COUNT(*) FROM user_profile WHERE key NOT LIKE '\\_%' ESCAPE '\\'"
@@ -286,13 +254,8 @@ class MemorySkill(BaseSkill):
 
         return SkillResult(success=True, message="\n".join(lines))
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _guess_category(fact: str) -> str:
-        """Heuristically categorize a fact."""
         lower = fact.lower()
 
         user_keywords = ("mi ", "yo ", "me ", "tengo ", "soy ", "prefiero ")

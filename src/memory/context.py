@@ -1,6 +1,4 @@
-"""
-Context builder for conversations.
-"""
+"""Conversation context assembly from memory stores."""
 
 from __future__ import annotations
 
@@ -28,6 +26,7 @@ class ConversationContext:
     last_session_summary: dict[str, Any] | None
     session_id: str
     current_message: str
+    procedures: list[dict[str, Any]] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -40,7 +39,6 @@ class ContextBuilder:
         self._profile_cache: dict[str, str] | None = None
 
     def invalidate_profile_cache(self) -> None:
-        """Call when user profile changes."""
         self._profile_cache = None
 
     def build(self, current_message: str, session_id: str) -> ConversationContext:
@@ -56,6 +54,7 @@ class ContextBuilder:
 
         relevant_facts = self._search_relevant_facts(current_message)
         relevant_knowledge = self._search_relevant_knowledge(current_message)
+        procedures = self._search_procedures(current_message)
         pending = self._tasks.get_pending()
         projects = self._load_active_projects()
         last_summary = self._load_last_session_summary(session_id)
@@ -65,6 +64,7 @@ class ContextBuilder:
             pending_tasks=pending, active_projects=projects,
             last_session_summary=last_summary, session_id=session_id,
             current_message=current_message,
+            procedures=procedures,
         )
         log.debug("context.built", session_id=session_id, recent_count=len(recent), facts_count=len(relevant_facts))
         return ctx
@@ -98,17 +98,23 @@ class ContextBuilder:
         except Exception:
             return []
 
+    def _search_procedures(self, message: str, limit: int = 5) -> list[dict[str, Any]]:
+        try:
+            sql = "SELECT fact FROM learned_facts WHERE category = 'procedure' ORDER BY last_used DESC, id DESC LIMIT ?"
+            return self._engine.fetchall_dicts(sql, (limit,))
+        except Exception:
+            return []
+
     def _load_active_projects(self) -> list[dict[str, Any]]:
         sql = "SELECT id, name, path, description, last_activity, status, notes FROM projects WHERE status = 'active' ORDER BY last_activity DESC"
         return self._engine.fetchall_dicts(sql)
 
     def _load_cross_session_history(self, exclude_session: str, limit: int = 15) -> list[dict[str, Any]]:
-        """Load recent messages from previous sessions (last 48h) for continuity."""
         sql = """
             SELECT id, timestamp, role, message, message_type, audio_duration_secs, channel
             FROM conversations
             WHERE session_id != ?
-              AND timestamp >= datetime('now', '-48 hours')
+              AND timestamp >= datetime('now', '-7 days')
             ORDER BY id DESC
             LIMIT ?
         """

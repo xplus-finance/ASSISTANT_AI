@@ -1,6 +1,4 @@
-"""
-Memory engine \u2014 the core persistence layer for the AI assistant.
-"""
+"""Memory subsystem: persistence, context, conversation, learning, tasks."""
 
 from src.memory.context import ContextBuilder, ConversationContext
 from src.memory.conversation import ConversationStore

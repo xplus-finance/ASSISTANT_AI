@@ -9,18 +9,13 @@ from typing import Any
 
 @dataclass
 class SkillResult:
-    """Standard result envelope returned by every skill execution."""
     success: bool
     message: str
     data: Any = None
 
 
 class BaseSkill(ABC):
-    """Abstract base for all assistant skills.
 
-    Subclasses must define ``name``, ``description``, ``triggers``,
-    and ``execute(args, context)``.
-    """
 
     @property
     @abstractmethod
@@ -33,7 +28,6 @@ class BaseSkill(ABC):
     @property
     @abstractmethod
     def triggers(self) -> list[str]:
-        """Prefixes (case-insensitive) that activate this skill."""
         ...
 
     @abstractmethod

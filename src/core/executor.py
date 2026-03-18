@@ -1,4 +1,4 @@
-"""Sandboxed command execution using bubblewrap (bwrap)."""
+"""Sandboxed command execution via bubblewrap (bwrap)."""
 
 from __future__ import annotations
 
@@ -36,8 +36,7 @@ class ExecutionResult:
 
 
 class SandboxedExecutor:
-    """Execute shell commands inside a bubblewrap sandbox.
-    Falls back to subprocess with timeout if bwrap is unavailable."""
+
 
     MAX_OUTPUT_BYTES = 1024 * 1024  # 1 MB
 

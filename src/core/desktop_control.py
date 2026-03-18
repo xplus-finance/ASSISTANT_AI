@@ -1,16 +1,4 @@
-"""
-Desktop control module for the AI assistant.
-
-Allows the assistant to interact with the user's desktop:
-- Take screenshots
-- Type on the keyboard
-- Control windows and browser tabs
-- Send messages to other Claude Code instances
-
-On Linux: uses standard tools (xdotool, wmctrl, scrot, xclip).
-On macOS: uses native screencapture and osascript (AppleScript).
-On Windows: uses pyautogui, pyperclip, and PowerShell.
-"""
+"""Desktop control: screenshots, keyboard, windows, clipboard."""
 
 import asyncio
 import os
@@ -27,14 +15,9 @@ log = structlog.get_logger("assistant.desktop_control")
 
 
 class DesktopControl:
-    """Controls the desktop environment."""
+
 
     async def take_screenshot(self, region: str | None = None) -> str:
-        """Capture screenshot, return path to PNG file.
-
-        Args:
-            region: Optional region "x,y,width,height" or None for full screen
-        """
         fd, output = tempfile.mkstemp(suffix=".png", prefix="screenshot_")
         os.close(fd)
 
@@ -45,7 +28,6 @@ class DesktopControl:
         return await self._screenshot_linux(output)
 
     async def _screenshot_linux(self, output: str) -> str:
-        """Linux screenshot using scrot/gnome-screenshot/import."""
         for tool, cmd in [
             ("scrot", ["scrot", output]),
             ("gnome-screenshot", ["gnome-screenshot", "-f", output]),
@@ -67,7 +49,6 @@ class DesktopControl:
         )
 
     async def _screenshot_macos(self, output: str) -> str:
-        """macOS screenshot using native screencapture."""
         proc = await asyncio.create_subprocess_exec(
             "screencapture", "-x", output,
             stdout=asyncio.subprocess.PIPE,
@@ -82,7 +63,6 @@ class DesktopControl:
         )
 
     async def _screenshot_windows(self, output: str) -> str:
-        """Windows screenshot using pyautogui or PIL."""
         try:
             import pyautogui
             img = pyautogui.screenshot()
@@ -106,7 +86,6 @@ class DesktopControl:
         )
 
     async def type_text(self, text: str, delay_ms: int = 50) -> None:
-        """Type text using xdotool (Linux), osascript (macOS), or pyautogui (Windows)."""
         if IS_WINDOWS:
             self._require_module("pyautogui")
             import pyautogui
@@ -133,18 +112,11 @@ class DesktopControl:
         log.info("desktop.typed", length=len(text))
 
     async def press_keys(self, *keys: str) -> None:
-        """Press key combination. E.g., press_keys("ctrl", "t") for new tab.
-
-        Common keys: ctrl, alt, shift, super, Tab, Return, Escape,
-        F1-F12, Left, Right, Up, Down, Home, End, Page_Up, Page_Down
-        """
         if IS_WINDOWS:
             self._require_module("pyautogui")
             import pyautogui
             await asyncio.to_thread(pyautogui.hotkey, *keys)
         elif IS_MACOS:
-            # Map key names to AppleScript key code using modifiers
-            # osascript: keystroke "t" using {command down, shift down}
             modifier_map = {
                 "ctrl": "command down",  # macOS convention: Ctrl → Cmd
                 "alt": "option down",
@@ -188,7 +160,6 @@ class DesktopControl:
         log.info("desktop.key_press", keys="+".join(keys))
 
     async def list_windows(self) -> list[dict]:
-        """List all open windows."""
         if IS_WINDOWS:
             return await self._list_windows_windows()
         elif IS_MACOS:
@@ -196,7 +167,6 @@ class DesktopControl:
         return await self._list_windows_linux()
 
     async def _list_windows_linux(self) -> list[dict]:
-        """List windows via wmctrl."""
         self._require("wmctrl")
         proc = await asyncio.create_subprocess_exec(
             "wmctrl", "-l",
@@ -220,7 +190,6 @@ class DesktopControl:
         return windows
 
     async def _list_windows_macos(self) -> list[dict]:
-        """List visible applications via osascript."""
         script = 'tell application "System Events" to get name of every process whose visible is true'
         proc = await asyncio.create_subprocess_exec(
             "osascript", "-e", script,
@@ -232,7 +201,6 @@ class DesktopControl:
         windows = []
         output = stdout.decode().strip()
         if output:
-            # osascript returns comma-separated list: "Finder, Safari, Terminal"
             for i, name in enumerate(output.split(", ")):
                 name = name.strip()
                 if name:
@@ -245,7 +213,6 @@ class DesktopControl:
         return windows
 
     async def _list_windows_windows(self) -> list[dict]:
-        """List windows via PowerShell."""
         ps_cmd = (
             "Get-Process | Where-Object {$_.MainWindowTitle -ne ''} "
             "| Select-Object Id, MainWindowTitle "
@@ -273,7 +240,6 @@ class DesktopControl:
         return windows
 
     async def focus_window(self, window_id: str = "", title_match: str = "") -> bool:
-        """Bring a window to front by ID or title match."""
         if IS_WINDOWS:
             return await self._focus_window_windows(window_id, title_match)
         elif IS_MACOS:
@@ -299,14 +265,8 @@ class DesktopControl:
         return proc.returncode == 0
 
     async def _focus_window_macos(self, window_id: str, title_match: str) -> bool:
-        """Focus window via osascript on macOS.
-
-        On macOS, window_id from _list_windows_macos is just an index,
-        so title_match (app name) is preferred.
-        """
         app_name = title_match if title_match else None
 
-        # If window_id provided, resolve it to an app name from the window list
         if not app_name and window_id:
             windows = await self._list_windows_macos()
             for w in windows:
@@ -329,7 +289,6 @@ class DesktopControl:
         return proc.returncode == 0
 
     async def _focus_window_windows(self, window_id: str, title_match: str) -> bool:
-        """Focus window via PowerShell."""
         if window_id:
             window_id = str(int(window_id))  # Sanitize: raises ValueError if not numeric
             ps_cmd = (
@@ -357,7 +316,6 @@ class DesktopControl:
         return proc.returncode == 0
 
     async def switch_browser_tab(self, direction: str = "next") -> None:
-        """Switch browser tab. direction: 'next' or 'prev'."""
         if direction == "next":
             await self.press_keys("ctrl", "Tab")
         else:
@@ -365,18 +323,11 @@ class DesktopControl:
         log.info("desktop.browser_tab", direction=direction)
 
     async def go_to_browser_tab(self, tab_number: int) -> None:
-        """Go to specific browser tab by number (1-9)."""
         if 1 <= tab_number <= 9:
             await self.press_keys("ctrl", str(tab_number))
             log.info("desktop.browser_tab_number", tab=tab_number)
 
     async def list_browser_tabs_cdp(self, port: int = 9222) -> list[dict]:
-        """List ALL browser tabs via Chrome DevTools Protocol (CDP).
-
-        Requires Chrome/Chromium started with --remote-debugging-port=9222.
-        Returns list of dicts with: id, title, url, type, active.
-        Returns empty list if CDP is not available.
-        """
         try:
             import urllib.request
             url = f"http://localhost:{port}/json/list"
@@ -402,14 +353,6 @@ class DesktopControl:
             return []
 
     async def scan_all_tabs(self, max_tabs: int = 60, delay_ms: int = 400) -> list[dict]:
-        """Scan ALL open browser tabs by iterating Ctrl+Tab.
-
-        Works for ALL browsers (Chrome, Firefox, Edge, etc.) without CDP.
-        Reads window title at each step to capture tab title.
-        Stops when a title repeats (full cycle) or max_tabs is reached.
-
-        Returns list of dicts: {index, title, screenshot_path (optional)}.
-        """
         if IS_WINDOWS:
             get_title_cmd = None  # use PowerShell fallback
         elif IS_MACOS:
@@ -419,7 +362,6 @@ class DesktopControl:
                 raise RuntimeError("xdotool no instalado. Ejecuta: sudo apt install xdotool")
 
         async def _get_window_title() -> str:
-            """Get the active window title."""
             if IS_WINDOWS:
                 ps = (
                     "Add-Type -AssemblyName System.Windows.Forms; "
@@ -469,7 +411,6 @@ class DesktopControl:
         tabs = []
         seen_titles: list[str] = []
 
-        # Record the starting tab title
         first_title = await _get_window_title()
         if first_title:
             tabs.append({"index": 0, "title": first_title})
@@ -483,8 +424,6 @@ class DesktopControl:
             if not title:
                 continue
 
-            # Detect full cycle: browser window title goes back to the start
-            # (strip browser suffix like "- Chromium", "- Firefox", "- Google Chrome")
             def _strip_browser(t: str) -> str:
                 for suffix in (" - Chromium", " - Google Chrome", " - Chrome",
                                " - Mozilla Firefox", " - Firefox", " - Microsoft Edge"):
@@ -495,7 +434,6 @@ class DesktopControl:
             stripped = _strip_browser(title)
             first_stripped = _strip_browser(seen_titles[0]) if seen_titles else ""
 
-            # Cycle complete if we're back at the first tab
             if i > 0 and stripped == first_stripped:
                 log.info("desktop.scan_tabs_cycle_complete", total=len(tabs))
                 break
@@ -507,12 +445,6 @@ class DesktopControl:
         return tabs
 
     async def send_to_claude_code(self, message: str, window_title: str = "Claude") -> bool:
-        """Send a message to another Claude Code CLI instance.
-
-        Finds the window with Claude Code, focuses it, types the message,
-        and presses Enter to send it.
-        """
-        # Find Claude Code window
         windows = await self.list_windows()
         target = None
         for w in windows:
@@ -526,7 +458,6 @@ class DesktopControl:
             return False
 
         if IS_MACOS:
-            # Save current frontmost app name to return to it later
             script = (
                 'tell application "System Events" to get name of first '
                 'application process whose frontmost is true'
@@ -539,7 +470,6 @@ class DesktopControl:
             current_window = out.decode().strip() or None
         elif not IS_WINDOWS:
             self._require("xdotool")
-            # Save current active window to return to it later
             current_proc = await asyncio.create_subprocess_exec(
                 "xdotool", "getactivewindow",
                 stdout=asyncio.subprocess.PIPE,
@@ -549,18 +479,15 @@ class DesktopControl:
         else:
             current_window = None
 
-        # Focus Claude Code window
         await self.focus_window(window_id=target["id"])
         await asyncio.sleep(0.5)  # Wait for focus
 
-        # Type the message and press Enter
         await self.type_text(message)
         await asyncio.sleep(0.2)
         await self.press_keys("Return")
 
         log.info("desktop.sent_to_claude", message_length=len(message), window=target["title"])
 
-        # Return to previous window (Linux/macOS only)
         await asyncio.sleep(0.3)
         if current_window and IS_MACOS:
             escaped = current_window.replace('"', '\\"')
@@ -577,7 +504,6 @@ class DesktopControl:
         return True
 
     async def get_clipboard(self) -> str:
-        """Get clipboard content."""
         if IS_WINDOWS:
             self._require_module("pyperclip")
             import pyperclip
@@ -602,7 +528,6 @@ class DesktopControl:
         return stdout.decode()
 
     async def set_clipboard(self, text: str) -> None:
-        """Set clipboard content."""
         if IS_WINDOWS:
             self._require_module("pyperclip")
             import pyperclip
@@ -631,7 +556,6 @@ class DesktopControl:
         await asyncio.wait_for(proc.wait(), timeout=5)
 
     async def check_tools(self) -> dict[str, bool]:
-        """Check which desktop control tools are available."""
         if IS_WINDOWS:
             tools = {}
             for mod in ["pyautogui", "pyperclip"]:
@@ -655,7 +579,6 @@ class DesktopControl:
         return tools
 
     async def install_tools(self) -> str:
-        """Install missing desktop control tools."""
         if IS_WINDOWS:
             missing = []
             for mod in ["pyautogui", "pyperclip"]:
@@ -673,9 +596,6 @@ class DesktopControl:
             )
 
         if IS_MACOS:
-            # macOS native tools (screencapture, osascript, pbcopy, pbpaste) are
-            # always available. No additional tools needed for core functionality.
-            # Optional: cliclick for advanced mouse/keyboard control.
             optional_missing = []
             for tool in ["cliclick"]:
                 if not shutil.which(tool):
@@ -726,7 +646,6 @@ class DesktopControl:
 
     @staticmethod
     def _require(tool: str) -> None:
-        """Require a system tool (Linux)."""
         if not shutil.which(tool):
             raise RuntimeError(
                 f"'{tool}' not installed. Run: sudo apt install {tool}"
@@ -734,7 +653,6 @@ class DesktopControl:
 
     @staticmethod
     def _require_module(module: str) -> None:
-        """Require a Python module (Windows)."""
         try:
             __import__(module)
         except ImportError:

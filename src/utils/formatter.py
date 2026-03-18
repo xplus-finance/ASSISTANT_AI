@@ -5,15 +5,10 @@ from __future__ import annotations
 import re
 from datetime import timedelta
 
-# https://core.telegram.org/bots/api#markdownv2-style
 _MARKDOWNV2_SPECIAL = r"_*[]()~`>#+-=|{}.!\\"
 
 
 def truncate_for_telegram(text: str, max_length: int = 4096) -> list[str]:
-    """Split text into chunks that fit Telegram's 4096-char limit.
-
-    Tries newlines first, then spaces, then hard-splits.
-    """
     if not text:
         return [""]
 
@@ -79,7 +74,6 @@ def format_status(
 
 
 def _format_duration(seconds: float) -> str:
-    """Convert seconds to a human-readable duration string."""
     td = timedelta(seconds=int(seconds))
     days = td.days
     hours, remainder = divmod(td.seconds, 3600)

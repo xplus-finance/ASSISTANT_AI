@@ -1,4 +1,4 @@
-"""Entry point for the Personal AI Assistant."""
+"""Application entry point."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from src.utils.platform import IS_WINDOWS
 
 
 class Settings(BaseSettings):
-    """Application configuration loaded from environment / .env file."""
+    """Application configuration from environment or .env file."""
 
     telegram_bot_token: str
     authorized_chat_id: int
@@ -152,7 +152,6 @@ async def _handle_signal(sig: signal.Signals, gateway: object, log: object) -> N
 
 
 def run() -> None:
-    """Synchronous wrapper for console_scripts or direct invocation."""
     try:
         asyncio.run(main())
     except KeyboardInterrupt:

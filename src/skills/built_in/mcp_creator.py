@@ -1,11 +1,4 @@
-"""
-MCP Server creator skill.
-
-When the assistant needs tools it doesn't have, it can create
-MCP (Model Context Protocol) servers that provide new capabilities.
-Uses Claude to generate the MCP server code, then installs and
-activates it automatically.
-"""
+"""MCP Server creator: generate and install MCP servers on demand."""
 
 from __future__ import annotations
 
@@ -53,7 +46,7 @@ _MCP_GENERATION_PROMPT = textwrap.dedent("""\
 
 
 class MCPCreatorSkill(BaseSkill):
-    """Creates MCP servers for new capabilities the assistant needs."""
+
 
     @property
     def name(self) -> str:
@@ -87,7 +80,6 @@ class MCPCreatorSkill(BaseSkill):
         return await self._create_mcp(args, claude)
 
     async def _list_mcps(self) -> SkillResult:
-        """List existing MCP servers."""
         mcp_dir = Path("mcps")
         if not mcp_dir.exists():
             return SkillResult(
@@ -114,8 +106,6 @@ class MCPCreatorSkill(BaseSkill):
         return SkillResult(success=True, message="\n".join(lines))
 
     async def _create_mcp(self, description: str, claude: Any) -> SkillResult:
-        """Create a new MCP server from description."""
-        # Clean name from description
         safe_name = "".join(
             c if c.isalnum() or c == "_" else "_"
             for c in description[:30].lower()
@@ -138,7 +128,6 @@ class MCPCreatorSkill(BaseSkill):
                 timeout=180,
             )
 
-            # Parse response — extract python and requirements blocks
             code, requirements = self._parse_response(response)
 
             if not code:
@@ -147,7 +136,6 @@ class MCPCreatorSkill(BaseSkill):
                     message="No pude generar el código del MCP. Intenta con más detalle.",
                 )
 
-            # Save files
             server_path = mcp_dir / "server.py"
             server_path.write_text(code, encoding="utf-8")
 
@@ -160,7 +148,6 @@ class MCPCreatorSkill(BaseSkill):
 
             log.info("mcp_creator.created", name=safe_name, path=str(server_path))
 
-            # Auto-install
             install_result = await self._install_mcp(safe_name)
 
             return SkillResult(
@@ -181,7 +168,6 @@ class MCPCreatorSkill(BaseSkill):
             )
 
     async def _install_mcp(self, name: str) -> SkillResult:
-        """Install dependencies and register an MCP server."""
         mcp_dir = Path("mcps") / name
         server_path = mcp_dir / "server.py"
         req_path = mcp_dir / "requirements.txt"
@@ -199,7 +185,6 @@ class MCPCreatorSkill(BaseSkill):
 
         steps = []
 
-        # Step 1: Create venv
         if not venv_dir.exists():
             try:
                 result = await asyncio.to_thread(
@@ -214,7 +199,6 @@ class MCPCreatorSkill(BaseSkill):
             except Exception as e:
                 steps.append(f"Error creando venv: {e}")
 
-        # Step 2: Install requirements
         if req_path.exists():
             try:
                 result = await asyncio.to_thread(
@@ -229,9 +213,7 @@ class MCPCreatorSkill(BaseSkill):
             except Exception as e:
                 steps.append(f"Error instalando deps: {e}")
 
-        # Step 3: Register with Claude CLI
         try:
-            # claude mcp add -s user <name> -- <python> <server.py>
             register_cmd = [
                 "claude", "mcp", "add",
                 "-s", "user",
@@ -267,7 +249,6 @@ class MCPCreatorSkill(BaseSkill):
 
     @staticmethod
     def _parse_response(response: str) -> tuple[str, str]:
-        """Parse Claude's response to extract code and requirements blocks."""
         code = ""
         requirements = ""
 
@@ -277,15 +258,12 @@ class MCPCreatorSkill(BaseSkill):
             end = response.index("```", start)
             code = response[start:end].strip()
         elif "```" in response:
-            # Try first code block
             start = response.index("```") + 3
-            # Skip language identifier if present
             newline = response.index("\n", start)
             start = newline + 1
             end = response.index("```", start)
             code = response[start:end].strip()
 
-        # Extract ```requirements block
         if "```requirements" in response:
             start = response.index("```requirements") + len("```requirements")
             end = response.index("```", start)

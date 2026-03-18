@@ -1,10 +1,4 @@
-"""
-First-time setup wizard for the AI assistant.
-
-Runs interactively through a messaging channel (Telegram, CLI, etc.)
-using send/receive callbacks.  State is persisted so that the wizard
-can be resumed if interrupted mid-flow.
-"""
+"""First-time setup wizard with resumable state."""
 
 from __future__ import annotations
 
@@ -18,10 +12,6 @@ from src.utils.crypto import hash_pin
 
 log = structlog.get_logger("assistant.onboarding")
 
-
-# ---------------------------------------------------------------------------
-# Extraction prompts — used to extract clean values from natural language
-# ---------------------------------------------------------------------------
 
 _EXTRACTION_PROMPTS: dict[str, str] = {
     "assistant_name": (
@@ -81,10 +71,6 @@ _EXTRACTION_PROMPTS: dict[str, str] = {
         "Return ONLY the timezone identifier, nothing else."
     ),
 }
-
-# Step definitions — each step has a key and a prompt builder function.
-# Prompt builders receive the collected answers so far to interpolate
-# previous responses into the messages dynamically.
 
 def _prompt_assistant_name(_answers: dict[str, str]) -> str:
     return (
@@ -147,13 +133,11 @@ _STEPS: list[dict[str, Any]] = [
     {"key": "security_pin",    "prompt_fn": _prompt_security_pin},
 ]
 
-# Total number of steps (0-indexed internally)
 TOTAL_STEPS = len(_STEPS)
 
 
 @dataclass
 class _WizardState:
-    """Mutable wizard state, persisted between messages."""
 
     current_step: int = 0
     answers: dict[str, str] = field(default_factory=dict)
@@ -161,21 +145,12 @@ class _WizardState:
     waiting_for_answer: bool = False  # True = question was sent, waiting for response
 
 
-# Type aliases for the send/receive callbacks
 SendFn = Callable[[str], Coroutine[Any, Any, None]]
 ReceiveFn = Callable[[], Coroutine[Any, Any, str]]
 
 
 class OnboardingWizard:
-    """
-    Interactive onboarding wizard.
 
-    Usage::
-
-        wizard = OnboardingWizard(memory)
-        if not await wizard.is_onboarding_complete():
-            await wizard.start(send_fn, receive_fn)
-    """
 
     def __init__(self, memory_engine: MemoryEngine, claude_bridge: Any = None) -> None:
         self._memory = memory_engine
@@ -183,46 +158,23 @@ class OnboardingWizard:
         self._state = _WizardState()
         self._restore_state()
 
-    # ------------------------------------------------------------------
-    # Public helpers
-    # ------------------------------------------------------------------
-
     async def is_onboarding_complete(self) -> bool:
-        """
-        Return ``True`` if the user profile already contains an
-        ``assistant_name`` entry, meaning onboarding was completed before.
-        """
         row = self._memory.fetchone(
             "SELECT value FROM user_profile WHERE key = ?",
             ("assistant_name",),
         )
         return row is not None
 
-    # ------------------------------------------------------------------
-    # Full wizard flow
-    # ------------------------------------------------------------------
-
     async def start(self, send_fn: SendFn, receive_fn: ReceiveFn) -> None:
-        """
-        Run the wizard end-to-end.
-
-        Args:
-            send_fn: Async callable that sends a message to the user.
-            receive_fn: Async callable that waits for and returns the
-                        user's next text message.
-        """
         log.info("onboarding.start", step=self._state.current_step)
 
         while not self._state.is_complete:
             step_def = _STEPS[self._state.current_step]
 
-            # Send the question for the current step (dynamically built)
             prompt = step_def["prompt_fn"](self._state.answers)
             await send_fn(prompt)
 
-            # Wait for the user's answer
             response = await receive_fn()
-            # Normalize: strip BOM, CRLF → LF, then strip whitespace
             response = response.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n").strip()
 
             if not response:
@@ -239,36 +191,18 @@ class OnboardingWizard:
                 await send_fn(next_msg)
                 log.info("onboarding.complete")
             else:
-                # Advance to next step
                 self._state.current_step += 1
                 self._persist_state()
-
-    # ------------------------------------------------------------------
-    # Step processing
-    # ------------------------------------------------------------------
 
     async def process_step(
         self, step: int, response: str
     ) -> tuple[str, bool]:
-        """
-        Process the user's response for a given step.
-
-        Args:
-            step: Zero-based step index.
-            response: The user's text reply.
-
-        Returns:
-            A tuple ``(next_message, is_complete)`` where *next_message*
-            is either the next question or a completion summary, and
-            *is_complete* is ``True`` when all steps are done.
-        """
         if step < 0 or step >= TOTAL_STEPS:
             return ("Paso invalido.", False)
 
         step_def = _STEPS[step]
         key = step_def["key"]
 
-        # Special handling for the PIN step
         if key == "security_pin":
             normalized = response.lower().strip()
             if normalized in ("no", "n", "omitir", "skip", ""):
@@ -276,11 +210,9 @@ class OnboardingWizard:
             else:
                 self._state.answers[key] = hash_pin(response)
         else:
-            # Use Claude to extract the clean value from natural language
             clean_value = await self._extract_clean_value(key, response)
             self._state.answers[key] = clean_value
 
-        # Check if we just finished the last step
         if step >= TOTAL_STEPS - 1:
             name = self._state.answers.get("assistant_name", "Asistente")
             user = self._state.answers.get("user_name", "usuario")
@@ -300,23 +232,13 @@ class OnboardingWizard:
             )
             return (msg, True)
 
-        # Return next step's prompt — dynamically built with collected answers
         next_step = _STEPS[step + 1]
         return (next_step["prompt_fn"](self._state.answers), False)
 
-    # ------------------------------------------------------------------
-    # Smart extraction
-    # ------------------------------------------------------------------
-
     async def _extract_clean_value(self, key: str, raw_response: str) -> str:
-        """Use Claude to extract the clean value from a natural language response.
-        Falls back to local regex extraction if Claude is unavailable."""
-        # Normalize input: strip BOM, normalize CRLF → LF, take first non-empty line
         raw_response = raw_response.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")
         raw_response = raw_response.strip()
 
-        # For simple name fields, try local extraction first — it's fast and reliable
-        # for common patterns; Claude is only needed for unusual phrasings
         if key in ("assistant_name", "user_name"):
             pre_clean = self._local_extract(key, raw_response)
             # If local extract produced something shorter (i.e., it actually stripped preamble),
@@ -327,7 +249,6 @@ class OnboardingWizard:
 
         extraction_prompt = _EXTRACTION_PROMPTS.get(key)
 
-        # Try Claude extraction
         if extraction_prompt and self._claude:
             prompt = extraction_prompt.format(response=raw_response)
             try:
@@ -353,12 +274,10 @@ class OnboardingWizard:
             except Exception:
                 log.warning("onboarding.extraction_failed", key=key, exc_info=True)
 
-        # Local fallback extraction (no Claude needed)
         return self._local_extract(key, raw_response)
 
     @staticmethod
     def _local_extract(key: str, raw: str) -> str:
-        """Simple local extraction without AI — strips common preamble phrases."""
         import re
 
         text = raw.strip()
@@ -434,12 +353,7 @@ class OnboardingWizard:
 
         return text if text else raw.strip()
 
-    # ------------------------------------------------------------------
-    # Persistence
-    # ------------------------------------------------------------------
-
     def _persist_state(self) -> None:
-        """Save current wizard progress to the database."""
         import json
 
         state_json = json.dumps({
@@ -458,7 +372,6 @@ class OnboardingWizard:
         )
 
     def _restore_state(self) -> None:
-        """Restore wizard state from a previous interrupted session."""
         import json
 
         row = self._memory.fetchone(
@@ -482,7 +395,6 @@ class OnboardingWizard:
             log.warning("onboarding.restore_failed")
 
     async def _save_all(self) -> None:
-        """Persist all collected answers to the ``user_profile`` table."""
         for key, value in self._state.answers.items():
             if not value:
                 continue
@@ -496,7 +408,6 @@ class OnboardingWizard:
                 (key, value),
             )
 
-        # Clean up the transient wizard state
         self._memory.execute(
             "DELETE FROM user_profile WHERE key = ?",
             ("_onboarding_state",),

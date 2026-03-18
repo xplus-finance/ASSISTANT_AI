@@ -2,9 +2,7 @@
 
 # Personal AI Assistant
 
-**Your own private AI assistant. Reachable via Telegram or WhatsApp, 24/7, from anywhere.**
-
-Built on [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI — runs on your existing subscription. No API keys. No per-token costs.
+Asistente privado que corre en tu maquina y se comunica via Telegram o WhatsApp. Usa Claude Code CLI con tu suscripcion — sin API keys, sin costos por token.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12+-green.svg)](https://python.org)
@@ -13,37 +11,35 @@ Built on [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI — r
 [![Linux](https://img.shields.io/badge/Linux-Ubuntu_22.04+-orange.svg)](https://ubuntu.com)
 [![macOS](https://img.shields.io/badge/macOS-13+-lightgrey.svg)](https://apple.com)
 
-[English](#english) | [Installation](#installation) | [Documentation](#documentation) | [Security](#security)
+[English](#english) | [Instalacion](#instalacion) | [Documentacion](#documentacion) | [Seguridad](#seguridad)
 
 ---
 
 </div>
 
-## What is this?
+## Que es esto
 
-A **private, self-hosted AI assistant** that lives on your machine and talks to you through Telegram or WhatsApp. This is not a generic chatbot — it is *your* assistant: it remembers everything, executes commands on your system, searches the web, schedules tasks, works on your code projects, and learns your preferences over time.
+Un asistente personal que vive en tu computadora. Se comunica contigo por Telegram o WhatsApp, ejecuta comandos en tu sistema, recuerda todo entre sesiones, busca informacion en la web, programa tareas, trabaja en tus proyectos de codigo y aprende tus preferencias.
 
-Single authorized user. Nobody else can interact with it. All data stored locally — nothing leaves your machine.
+Un solo usuario autorizado. Nadie mas puede interactuar con el. Todos los datos almacenados localmente — nada sale de tu maquina.
 
----
-
-## Core Capabilities
-
-| Permanent Memory | Security Hardened | Voice In/Out |
-|---|---|---|
-| Every conversation, fact, and preference stored locally with AES-256 encryption. Persistent across restarts. | Authentication, PIN verification, sandboxed execution, input sanitization, output scanning, rate limiting. | Send and receive voice notes. Local speech recognition via faster-whisper. No cloud dependency. |
-
-| Full Autonomy | Self-Evolving | Multi-Platform |
-|---|---|---|
-| If it lacks a tool, it builds one. If it doesn't know something, it researches it. Never says "I can't". | Creates its own skills, MCP servers, and scripts on the fly. Hot-reload applies changes without restart. | Windows 10+, Linux (Ubuntu/Fedora/Arch), macOS. Same codebase, same features. |
-
-| Scheduled Tasks | Web Research | Desktop Control |
-|---|---|---|
-| Program reminders and recurring tasks. They execute automatically at the specified time. | Searches DuckDuckGo without API keys. Fetches, summarizes, and stores knowledge. | Navigate browser tabs, take screenshots, type text, open applications. Cross-platform. |
+55 archivos fuente Python. 14 skills integradas. 8 capas de seguridad.
 
 ---
 
-## Installation
+## Capacidades
+
+| Memoria permanente | Seguridad en 8 capas | Voz entrada/salida |
+|---|---|---|
+| Conversaciones, hechos y preferencias en SQLite cifrado con AES-256. Persistente entre reinicios. Historial cruzado de 7 dias entre sesiones. | Autenticacion, PIN bcrypt, sanitizacion, deteccion de prompt injection, escaneo de salida, rate limiting, permisos automaticos, ejecucion en sandbox. | Notas de voz con faster-whisper (local). Multiples motores TTS: chatterbox, espeak, gTTS, pyttsx3. |
+
+| Auto-evolucion | Multi-plataforma | Escritorio |
+|---|---|---|
+| Crea sus propias skills y servidores MCP en tiempo de ejecucion. Hot-reload con auto-restart. Validacion de sintaxis y backups automaticos. | Windows 10+ (PowerShell, Task Scheduler), Linux (apt/dnf/pacman, systemd), macOS (Homebrew, launchd). Mismo codigo, mismas funciones. | Control de ventanas, capturas de pantalla, escaneo de pestanas del navegador, escritura en teclado. Soporte dual monitor. |
+
+---
+
+## Instalacion
 
 ### Linux / macOS
 
@@ -53,7 +49,7 @@ cd ASSISTANT_AI
 bash install.sh
 ```
 
-Supports **apt** (Ubuntu/Debian), **brew** (macOS), **dnf** (Fedora), **pacman** (Arch).
+Detecta automaticamente `apt`, `dnf`, `pacman` o `brew` e instala dependencias.
 
 ### Windows
 
@@ -63,92 +59,89 @@ cd ASSISTANT_AI
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-Both installers are interactive, step-by-step. No technical experience required.
-Estimated time: **5-10 minutes**.
+Ambos instaladores son interactivos y paso a paso. Tiempo estimado: 5-10 minutos.
 
-> The installer is idempotent — safe to run multiple times.
-
----
-
-## Requirements
-
-| Requirement | Version | Notes |
-|-------------|---------|-------|
-| **OS** | Windows 10+, Linux, macOS | Cross-platform |
-| **Python** | 3.12+ | With venv and pip |
-| **Claude Code CLI** | Latest | `npm install -g @anthropic-ai/claude-code` (requires Pro or Max subscription) |
-| **ffmpeg** | Any | Audio processing (auto-installed by installer) |
-| **Node.js** | 18+ | Only for WhatsApp Baileys channel |
-| **CUDA GPU** | Optional | Faster Whisper transcription |
-
-Platform-specific packages are handled automatically by the installer.
+> El instalador es idempotente — seguro ejecutar multiples veces.
 
 ---
 
-## Channels
+## Requisitos
 
-| Channel | Cost | Ban Risk | Setup Time | Recommended |
-|---------|------|----------|------------|-------------|
-| **Telegram** | Free | None | 2 min | Start here |
-| **WhatsApp Baileys** | ~$2/mo | Medium | 15 min | Casual use |
-| **WhatsApp Business API** | ~$5-20/mo | None | 1-2 hrs | Production |
-
-Start with Telegram. It's free, zero risk, and takes minutes.
-
----
-
-## Commands
-
-The assistant understands **natural language**, but also accepts direct commands:
-
-### Information
-| Command | Description |
-|---------|-------------|
-| `!status` | System status, uptime, memory usage |
-| `!yo` | Your profile: learned preferences, stats |
-| `!help` | List all available commands |
-
-### Memory
-| Command | Description |
-|---------|-------------|
-| `!memoria` | View stored memories |
-| `!memoria buscar <text>` | Search memories |
-| `!recuerda <text>` | Save to permanent memory |
-
-### Tasks
-| Command | Description |
-|---------|-------------|
-| `!tareas` | View pending tasks |
-| `!tarea nueva <desc>` | Create task |
-| `recuerdame [something] a las [time]` | Natural language reminder |
-
-### Web & Learning
-| Command | Description |
-|---------|-------------|
-| `!busca <query>` | Web search |
-| `!aprende <url>` | Fetch and learn from URL |
-
-### Terminal & Files
-| Command | Description |
-|---------|-------------|
-| `!cmd <command>` | Execute in sandbox |
-| `!screenshot` | Take and send screenshot |
-| `lee el archivo [path]` | Read file contents |
-
-### Skills & MCP
-| Command | Description |
-|---------|-------------|
-| `!skills` | List available skills |
-| `!skill crear <desc>` | Create a new skill |
-| `!mcp crear <desc>` | Create, install and activate an MCP server |
-| `!mcp list` | List MCP servers |
+| Requisito | Version | Notas |
+|-----------|---------|-------|
+| **OS** | Windows 10+, Linux, macOS | Multiplataforma |
+| **Python** | 3.12+ | Con venv y pip |
+| **Claude Code CLI** | Ultimo | `npm install -g @anthropic-ai/claude-code` (requiere suscripcion Pro o Max) |
+| **ffmpeg** | Cualquiera | Procesamiento de audio (instalado automaticamente) |
+| **Node.js** | 18+ | Solo para canal WhatsApp Baileys |
+| **GPU CUDA** | Opcional | Transcripcion mas rapida con faster-whisper |
 
 ---
 
-## Architecture
+## Canales
+
+| Canal | Costo | Riesgo de ban | Setup | Recomendado |
+|-------|-------|---------------|-------|-------------|
+| **Telegram** | Gratis | Ninguno | 2 min | Empezar aqui |
+| **WhatsApp Baileys** | ~$2/mes | Medio | 15 min | Uso casual |
+| **WhatsApp Business API** | ~$5-20/mes | Ninguno | 1-2 hrs | Produccion |
+
+---
+
+## Skills integradas
+
+14 skills disponibles desde la instalacion:
+
+| Skill | Funcion | Activacion |
+|-------|---------|------------|
+| **terminal** | Ejecutar comandos del sistema en sandbox | `!cmd <comando>` |
+| **files** | Leer, escribir, buscar y gestionar archivos | `lee el archivo [ruta]` |
+| **memory** | Consultar y almacenar memoria permanente | `!memoria`, `!recuerda [algo]` |
+| **tasks** | Crear tareas, recordatorios y programar ejecuciones | `!tareas`, `!tarea nueva [desc]` |
+| **learning** | Buscar en la web y almacenar conocimiento | `!busca [tema]`, `!aprende [url]` |
+| **desktop_control** | Capturas de pantalla, gestion de ventanas, teclado | `!screenshot`, lenguaje natural |
+| **mcp_creator** | Generar, instalar y registrar servidores MCP | `!mcp crear [desc]` |
+| **skill_creator** | Crear nuevas skills en tiempo de ejecucion | `!skill crear [desc]` |
+| **claude_code** | Integrar sesiones de Claude Code para proyectos | Lenguaje natural sobre codigo |
+| **system_monitor** | Estado del sistema, CPU, RAM, disco, procesos | `!status` |
+| **file_search** | Busqueda avanzada de archivos por nombre/contenido | `busca archivos [patron]` |
+| **git** | Operaciones git: status, commit, diff, log, branches | `git status`, lenguaje natural |
+| **network** | Diagnostico de red: ping, DNS, puertos, interfaces | `haz ping a [host]` |
+| **package_manager** | Gestionar paquetes del sistema (apt/dnf/pacman/brew/winget) | `instala [paquete]` |
+
+---
+
+## Comandos
+
+| Categoria | Comando | Descripcion |
+|-----------|---------|-------------|
+| Info | `!status` | Estado del sistema, uptime, uso de recursos |
+| Info | `!yo` | Tu perfil: preferencias aprendidas, estadisticas |
+| Info | `!help` | Lista de comandos disponibles |
+| Memoria | `!memoria` | Ver memorias almacenadas |
+| Memoria | `!memoria buscar <texto>` | Buscar en memoria |
+| Memoria | `!recuerda <texto>` | Guardar en memoria permanente |
+| Tareas | `!tareas` | Ver tareas pendientes |
+| Tareas | `!tarea nueva <desc>` | Crear tarea |
+| Tareas | `recuerdame [algo] a las [hora]` | Recordatorio en lenguaje natural |
+| Web | `!busca <query>` | Busqueda web (DuckDuckGo, sin API key) |
+| Web | `!aprende <url>` | Obtener y aprender de una URL |
+| Terminal | `!cmd <comando>` | Ejecutar en sandbox |
+| Desktop | `!screenshot` | Captura de pantalla |
+| Skills | `!skills` | Listar skills disponibles |
+| Skills | `!skill crear <desc>` | Crear nueva skill |
+| MCP | `!mcp crear <desc>` | Crear e instalar servidor MCP |
+| MCP | `!mcp list` | Listar servidores MCP |
+| Audio | `!voz on/off/auto` | Controlar respuestas de voz |
+
+El asistente entiende lenguaje natural. Los comandos son atajos directos.
+
+---
+
+## Arquitectura
 
 ```
-  You (Telegram / WhatsApp)
+  Tu (Telegram / WhatsApp)
          |
          v
 +---------------------+
@@ -157,80 +150,92 @@ The assistant understands **natural language**, but also accepts direct commands
          |
          v
 +---------------------+
-|   SecurityGuardian   |  Chat ID auth - PIN verification - Rate limiting
-+--------+------------+   Prompt injection detection - Output scanning
+|   SecurityGuardian   |  Auth por Chat ID - PIN bcrypt - Rate limiting
++--------+------------+   Prompt injection (28 patrones) - Escaneo de salida
          |
          v
 +---------------------+
-|   Gateway            |  Central orchestrator - Message pipeline
-+---+--------+--------+  Session management - Onboarding
+|   Gateway            |  Orquestador central - Pipeline de mensajes
++---+--------+--------+  Sesiones - Onboarding - Context builder
     |        |
     v        v
 +--------+ +--------------+
-| Memory | | Claude Code   |  Brain (uses your subscription, NOT API key)
-| Engine | | Bridge        |  Persistent session - One-shot fallback
+| Memory | | Claude Code   |  Cerebro (usa tu suscripcion, NO API key)
+| Engine | | Bridge        |  Sesion persistente - Fallback one-shot
 +--------+ +------+-------+
                   |
            +------+------+
-           |   Skills     |  Terminal - Files - Web - Audio - MCP
-           |   Registry   |  Hot-reload - Runtime creation
+           |   Skills     |  14 built-in + runtime creation
+           |   Registry   |  Hot-reload - Watchdog
            +-------------+
 ```
 
-The assistant runs Claude Code as a **separate process** — it never interferes with your own Claude Code sessions. Multiple instances can run simultaneously.
+El asistente ejecuta Claude Code como proceso separado — nunca interfiere con tus sesiones propias de Claude Code.
 
 ---
 
-## Security
+## Seguridad
 
-| Layer | Mechanism |
-|-------|-----------|
-| **Authentication** | Only the configured `AUTHORIZED_CHAT_ID` can interact. All others silently rejected. |
-| **PIN Verification** | Sensitive operations require a bcrypt-hashed PIN. Stored securely, never in plaintext. |
-| **Input Sanitization** | FTS5 query sanitization, path traversal prevention, SSRF blocking on private IPs. |
-| **Prompt Injection Detection** | 28 regex patterns detect injection attempts. Logged for audit. |
-| **Output Scanning** | Responses scanned for accidentally leaked secrets (tokens, keys, passwords) before delivery. |
-| **Rate Limiting** | Configurable messages-per-minute limit prevents abuse. |
-| **File Permissions** | Automatic hardening on startup: `.env` (600), `data/` (700), `logs/` (700). |
-| **Sandboxed Execution** | Commands run inside bubblewrap (Linux) or subprocess with timeout (Windows/Mac). |
-
----
-
-## Self-Evolution
-
-The assistant can modify its own source code, create new tools, and restart itself:
-
-- **Hot-reload**: Changes to utility modules apply instantly via `importlib.reload()`
-- **Auto-restart**: Changes to core modules trigger a full process restart (`os.execv`)
-- **Syntax validation**: Every modification is validated with `ast.parse()` before applying
-- **Automatic backups**: Original files backed up to `.backups/` before any change
-- **Skill creation**: New skills created at runtime, loaded by the watchdog-based registry
-- **MCP server creation**: Generates, installs (venv + deps), and registers MCP servers automatically
-
-With systemd, `Restart=always` ensures the assistant recovers from any failure within 10 seconds.
+| Capa | Mecanismo |
+|------|-----------|
+| **Autenticacion** | Solo el `AUTHORIZED_CHAT_ID` configurado puede interactuar. Resto rechazado silenciosamente. |
+| **PIN** | Operaciones sensibles requieren PIN con hash bcrypt. Nunca en texto plano. |
+| **Sanitizacion** | FTS5 query sanitization, prevencion de path traversal, bloqueo SSRF en IPs privadas. |
+| **Prompt injection** | 28 patrones regex detectan intentos de inyeccion. Registrados en audit log. |
+| **Escaneo de salida** | Respuestas escaneadas por tokens, keys y passwords filtrados antes de enviar. |
+| **Rate limiting** | Limite configurable de mensajes por minuto. |
+| **Permisos** | Endurecimiento automatico al arrancar: `.env` (600), `data/` (700), `logs/` (700). |
+| **Sandbox** | bubblewrap (Linux), subprocess con timeout (Windows/macOS). |
 
 ---
 
-## Environment Variables
+## Auto-evolucion
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Yes | — | Bot token from @BotFather |
-| `AUTHORIZED_CHAT_ID` | Yes | — | Your Telegram Chat ID |
-| `SECURITY_PIN` | No | *(empty)* | PIN for sensitive operations |
-| `CLAUDE_CLI_PATH` | No | `claude` | Path to Claude CLI executable |
-| `PROJECTS_BASE_DIR` | No | *(auto-detected)* | Base directory for projects |
-| `DB_ENCRYPTION_KEY` | No | *(empty)* | Database encryption key (generated by installer) |
-| `WHISPER_MODEL` | No | `medium` | STT model: tiny, base, small, medium, large-v3 |
-| `TTS_ENGINE` | No | `auto` | TTS engine: auto, chatterbox, espeak |
-| `TIMEZONE` | No | `America/New_York` | Timezone for scheduled tasks |
-| `LOG_LEVEL` | No | `INFO` | Logging level |
+- **Hot-reload**: Cambios en modulos utilitarios se aplican via `importlib.reload()` sin reiniciar
+- **Auto-restart**: Cambios en modulos core disparan restart completo (`os.execv`)
+- **Validacion**: Cada modificacion validada con `ast.parse()` antes de aplicar
+- **Backups**: Archivos originales respaldados en `.backups/` antes de cualquier cambio
+- **Skills**: Nuevas skills creadas en runtime, cargadas por el registry con watchdog
+- **MCP**: Genera, instala (venv + deps) y registra servidores MCP automaticamente
+
+Con systemd, `Restart=always` recupera de cualquier fallo en 10 segundos.
 
 ---
 
-## Running
+## Memoria
 
-### Development
+| Tipo | Persistencia | Descripcion |
+|------|-------------|-------------|
+| **Hechos permanentes** | Indefinida | Datos guardados explicitamente con `!recuerda` |
+| **Procedimientos** | Indefinida | Lecciones aprendidas de errores, nunca se repiten |
+| **Resumenes de sesion** | Indefinida | Resumen automatico al cerrar cada sesion |
+| **Historial cruzado** | 7 dias | Contexto de sesiones anteriores disponible en nuevas conversaciones |
+| **Base de conocimiento** | Indefinida | Informacion obtenida de busquedas web y URLs |
+
+Todo almacenado en SQLite local con cifrado opcional AES-256 via SQLCipher (APSW). Indices FTS5 para busqueda full-text.
+
+---
+
+## Variables de entorno
+
+| Variable | Requerida | Default | Descripcion |
+|----------|-----------|---------|-------------|
+| `TELEGRAM_BOT_TOKEN` | Si | — | Token de @BotFather |
+| `AUTHORIZED_CHAT_ID` | Si | — | Tu Chat ID de Telegram |
+| `SECURITY_PIN` | No | *(vacio)* | PIN para operaciones sensibles |
+| `CLAUDE_CLI_PATH` | No | `claude` | Ruta al ejecutable Claude CLI |
+| `PROJECTS_BASE_DIR` | No | *(auto)* | Directorio base para proyectos |
+| `DB_ENCRYPTION_KEY` | No | *(vacio)* | Clave de cifrado de DB (generada por el instalador) |
+| `WHISPER_MODEL` | No | `medium` | Modelo STT: tiny, base, small, medium, large-v3 |
+| `TTS_ENGINE` | No | `auto` | Motor TTS: auto, chatterbox, espeak |
+| `TIMEZONE` | No | `America/New_York` | Zona horaria para tareas programadas |
+| `LOG_LEVEL` | No | `INFO` | Nivel de logging |
+
+---
+
+## Ejecucion
+
+### Desarrollo
 
 ```bash
 # Linux/macOS
@@ -242,7 +247,7 @@ python -m src.main
 python -m src.main
 ```
 
-### Production (Linux — systemd)
+### Produccion — Linux (systemd)
 
 ```bash
 sudo systemctl start ai-assistant
@@ -250,46 +255,139 @@ sudo systemctl enable ai-assistant
 journalctl -u ai-assistant -f
 ```
 
+### Produccion — macOS (launchd)
+
+```bash
+cp launchd/com.assistant.ai.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.assistant.ai.plist
+```
+
 ### Windows (auto-start)
 
-The installer can configure a Windows Scheduled Task that launches the assistant at login.
-Alternatively, double-click `start.bat`.
+El instalador configura una tarea en Task Scheduler que arranca el asistente al iniciar sesion. Alternativa: doble clic en `start.bat`.
 
 ---
 
-## Troubleshooting
+## Solucion de problemas
 
-| Problem | Solution |
-|---------|----------|
-| `TELEGRAM_BOT_TOKEN not set` | Check your `.env` file |
-| Bot doesn't respond | Verify token with @BotFather, restart assistant |
-| `Unauthorized` on message | Your Chat ID doesn't match `AUTHORIZED_CHAT_ID` |
-| Audio/whisper error | Verify ffmpeg: `ffmpeg -version` |
-| `claude: command not found` | Install Claude CLI: `npm install -g @anthropic-ai/claude-code` |
-| Task hit max turns | Complex tasks auto-retry with higher limits; split into smaller steps if needed |
-
----
-
-## Contributing
-
-1. Fork the repository
-2. Create a branch: `git checkout -b feature-name`
-3. Follow the project's code style (see below)
-4. Run tests: `pytest tests/`
-5. Run linter: `ruff check src/`
-6. Open a Pull Request
-
-### Code Style
-
-- Python 3.12+ with type hints (`str | None`, `list[str]`)
-- `from __future__ import annotations` in every module
-- `structlog` for logging (never `print()`)
-- Parameterized SQL queries exclusively (never f-strings)
-- Async-first; `asyncio.to_thread()` for blocking calls
+| Problema | Solucion |
+|----------|----------|
+| `TELEGRAM_BOT_TOKEN not set` | Verificar archivo `.env` |
+| Bot no responde | Verificar token con @BotFather, reiniciar |
+| `Unauthorized` en mensaje | Chat ID no coincide con `AUTHORIZED_CHAT_ID` |
+| Error de audio/whisper | Verificar ffmpeg: `ffmpeg -version` |
+| `claude: command not found` | `npm install -g @anthropic-ai/claude-code` |
+| Tarea alcanza max turns | Dividir en pasos mas pequenos |
 
 ---
 
-## License
+## Documentacion
+
+| Documento | Contenido |
+|-----------|-----------|
+| [PASO_A_PASO.md](docs/PASO_A_PASO.md) | Guia completa de instalacion y configuracion |
+| [TELEGRAM_SETUP.md](docs/TELEGRAM_SETUP.md) | Configuracion del canal Telegram |
+| [WHATSAPP_BAILEYS_SETUP.md](docs/WHATSAPP_BAILEYS_SETUP.md) | WhatsApp con Baileys (no oficial) |
+| [WHATSAPP_BUSINESS_SETUP.md](docs/WHATSAPP_BUSINESS_SETUP.md) | WhatsApp Business API (oficial) |
+| [CLAUDE.md](CLAUDE.md) | Guia de desarrollo y mapa de modulos |
+
+---
+
+## Contribuir
+
+1. Fork del repositorio
+2. Crear branch: `git checkout -b feature-name`
+3. Seguir el estilo del proyecto (ver abajo)
+4. Tests: `pytest tests/`
+5. Linter: `ruff check src/`
+6. Abrir Pull Request
+
+### Estilo de codigo
+
+- Python 3.12+ con type hints (`str | None`, `list[str]`)
+- `from __future__ import annotations` en cada modulo
+- `structlog` para logging (nunca `print()`)
+- SQL parametrizado exclusivamente (nunca f-strings)
+- Async-first; `asyncio.to_thread()` para llamadas bloqueantes
+
+---
+
+## Licencia
+
+MIT — ver [LICENSE](LICENSE).
+
+---
+
+---
+
+<a id="english"></a>
+
+## English
+
+### What is this
+
+A private, self-hosted assistant that runs on your machine and communicates via Telegram or WhatsApp. It uses Claude Code CLI with your existing subscription — no API keys, no per-token costs.
+
+55 Python source files. 14 built-in skills. 8 security layers. Runs on Windows 10+, Linux and macOS.
+
+### What it does
+
+- **Permanent memory**: facts, procedures learned from mistakes, session summaries, 7-day cross-session history. SQLite with optional AES-256 encryption.
+- **14 skills**: terminal, files, memory, tasks, learning, desktop control, MCP server creation, skill creation, Claude Code integration, system monitor, file search, git, network diagnostics, package management.
+- **Voice**: faster-whisper STT (local), multiple TTS engines (chatterbox, espeak, gTTS, pyttsx3).
+- **Security**: authentication, bcrypt PIN, input sanitization, prompt injection detection (28 patterns), output scanning, rate limiting, auto-hardened file permissions, sandboxed execution.
+- **Self-evolution**: creates its own skills and MCP servers at runtime. Hot-reload with syntax validation and automatic backups.
+- **Desktop**: screenshots, window management, browser tab scanning, keyboard input. Dual monitor support.
+- **Cross-platform**: Windows (PowerShell installer, Task Scheduler), Linux (apt/dnf/pacman, systemd), macOS (Homebrew, launchd).
+
+### Quick start
+
+```bash
+# Linux/macOS
+git clone https://github.com/xplus-finance/ASSISTANT_AI.git
+cd ASSISTANT_AI && bash install.sh
+
+# Windows
+git clone https://github.com/xplus-finance/ASSISTANT_AI.git
+cd ASSISTANT_AI
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+
+### Requirements
+
+| Requirement | Version |
+|-------------|---------|
+| OS | Windows 10+, Linux, macOS |
+| Python | 3.12+ |
+| Claude Code CLI | Latest (`npm install -g @anthropic-ai/claude-code`) |
+| ffmpeg | Any (auto-installed) |
+| Node.js 18+ | Only for WhatsApp Baileys |
+| CUDA GPU | Optional (faster whisper) |
+
+### Built-in skills
+
+| Skill | Purpose |
+|-------|---------|
+| terminal | Execute system commands in sandbox |
+| files | Read, write, search and manage files |
+| memory | Query and store permanent memory |
+| tasks | Create tasks, reminders, scheduled execution |
+| learning | Web search and knowledge storage |
+| desktop_control | Screenshots, window management, keyboard |
+| mcp_creator | Generate, install and register MCP servers |
+| skill_creator | Create new skills at runtime |
+| claude_code | Claude Code integration for code projects |
+| system_monitor | System status: CPU, RAM, disk, processes |
+| file_search | Advanced file search by name/content |
+| git | Git operations: status, commit, diff, log, branches |
+| network | Network diagnostics: ping, DNS, ports, interfaces |
+| package_manager | System packages (apt/dnf/pacman/brew/winget) |
+
+### Security
+
+8 layers: chat ID authentication, bcrypt PIN, input sanitization, prompt injection detection, output scanning, rate limiting, automatic file permission hardening, sandboxed execution (bubblewrap on Linux, subprocess with timeout on Windows/macOS).
+
+### License
 
 MIT — see [LICENSE](LICENSE).
 

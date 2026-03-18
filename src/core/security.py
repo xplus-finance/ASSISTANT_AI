@@ -1,4 +1,4 @@
-"""Security validation: authentication, command/path/output scanning, rate limiting."""
+"""Security validation, rate limiting, and prompt injection detection."""
 
 from __future__ import annotations
 
@@ -10,8 +10,6 @@ from pathlib import Path
 
 from src.utils.logger import get_security_logger, get_audit_logger
 from src.utils.platform import IS_WINDOWS
-
-# Command validation — blacklists
 
 _BLOCKED_COMMANDS_LINUX: list[str] = [
     "rm -rf /", "rm -rf /*", "mkfs", "dd if=/dev/zero", "dd if=/dev/random",
@@ -70,8 +68,6 @@ _COMPILED_FORBIDDEN: list[tuple[re.Pattern, str]] = [
     (re.compile(pattern), desc) for pattern, desc in FORBIDDEN_PATTERNS
 ]
 
-# Anti-prompt-injection patterns
-
 INJECTION_PATTERNS: list[tuple[str, str]] = [
     (r"(?i)ignore\s+(all\s+)?previous\s+(instructions?|prompts?|rules?)", "Attempt to override system instructions"),
     (r"(?i)forget\s+(all\s+)?previous\s+(instructions?|context|messages?)", "Attempt to wipe conversation context"),
@@ -105,8 +101,6 @@ INJECTION_PATTERNS: list[tuple[str, str]] = [
 _COMPILED_INJECTION: list[tuple[re.Pattern, str]] = [
     (re.compile(pattern), desc) for pattern, desc in INJECTION_PATTERNS
 ]
-
-# Sensitive file patterns
 
 _SENSITIVE_FILE_PATTERNS_COMMON: list[tuple[str, str]] = [
     (r"\.ssh[/\\]", "SSH keys and config"),
@@ -156,8 +150,6 @@ _COMPILED_SENSITIVE_FILES: list[tuple[re.Pattern, str]] = [
     (re.compile(pattern), desc) for pattern, desc in SENSITIVE_FILE_PATTERNS
 ]
 
-# Output validation — detect leaked secrets
-
 SENSITIVE_OUTPUT_PATTERNS: list[tuple[str, str]] = [
     (r"(?i)(api[_-]?key|apikey)\s*[:=]\s*\S{10,}", "Possible API key in output"),
     (r"(?i)(secret[_-]?key|secretkey)\s*[:=]\s*\S{10,}", "Possible secret key in output"),
@@ -181,8 +173,6 @@ _COMPILED_SENSITIVE_OUTPUT: list[tuple[re.Pattern, str]] = [
     (re.compile(pattern), desc) for pattern, desc in SENSITIVE_OUTPUT_PATTERNS
 ]
 
-# Rate Limiter
-
 class RateLimiter:
     def __init__(self) -> None:
         self._requests: dict[str, list[float]] = defaultdict(list)
@@ -202,8 +192,6 @@ class RateLimiter:
 
     def reset_all(self) -> None:
         self._requests.clear()
-
-# Security Guardian
 
 class SecurityGuardian:
     def __init__(

@@ -1,6 +1,4 @@
-"""
-Task and recurring-job management.
-"""
+"""Task and recurring-job management."""
 
 from __future__ import annotations
 
@@ -17,7 +15,7 @@ _VALID_STATUSES = {"pending", "in_progress", "done", "recurring", "cancelled"}
 
 
 class TaskManager:
-    """Manage tasks and recurring jobs."""
+
 
     def __init__(self, engine: MemoryEngine) -> None:
         self._engine = engine

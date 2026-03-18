@@ -1,10 +1,4 @@
-"""
-Terminal skill — execute shell commands with sandboxing and approval.
-
-Commands are routed through ``SandboxedExecutor`` (when available) or
-a restricted ``asyncio.create_subprocess_shell``.  Dangerous commands
-require explicit user approval via ``ApprovalGate``.
-"""
+"""Terminal skill: sandboxed shell command execution with approval."""
 
 from __future__ import annotations
 
@@ -19,10 +13,8 @@ from src.utils.platform import IS_WINDOWS
 
 log = structlog.get_logger("assistant.skills.terminal")
 
-# Maximum output length before truncation (characters)
 _MAX_OUTPUT = 4000
 
-# Commands that are outright blocked regardless of approval
 _BLOCKED_PATTERNS_LINUX: frozenset[str] = frozenset({
     "rm -rf /",
     "rm -rf /*",
@@ -44,7 +36,6 @@ _BLOCKED_PATTERNS_WINDOWS: frozenset[str] = frozenset({
 
 _BLOCKED_PATTERNS: frozenset[str] = _BLOCKED_PATTERNS_WINDOWS if IS_WINDOWS else _BLOCKED_PATTERNS_LINUX
 
-# Commands that require approval before execution
 _DANGEROUS_PREFIXES_LINUX: tuple[str, ...] = (
     "rm ",
     "sudo ",
@@ -89,7 +80,7 @@ _DANGEROUS_PREFIXES: tuple[str, ...] = _DANGEROUS_PREFIXES_WINDOWS if IS_WINDOWS
 
 
 class TerminalSkill(BaseSkill):
-    """Execute shell commands with safety checks."""
+
 
     @property
     def name(self) -> str:
@@ -104,16 +95,6 @@ class TerminalSkill(BaseSkill):
         return ["!cmd", "!terminal", "!exec", "!run"]
 
     async def execute(self, args: str, context: dict[str, Any]) -> SkillResult:
-        """
-        Execute a shell command.
-
-        Context keys used:
-            ``approval_gate`` (ApprovalGate): For dangerous-command approval.
-            ``send_fn`` (callable): To send approval prompts to the user.
-            ``receive_fn`` (callable): To receive approval responses.
-            ``security_guardian``: Optional SecurityGuardian for validation.
-            ``sandbox`` / ``executor``: Optional SandboxedExecutor.
-        """
         command = args.strip()
         if not command:
             return SkillResult(
@@ -121,7 +102,6 @@ class TerminalSkill(BaseSkill):
                 message="Uso: !cmd <comando>\nEjemplo: !cmd ls -la",
             )
 
-        # Check for absolutely blocked commands
         cmd_lower = command.lower().strip()
         for blocked in _BLOCKED_PATTERNS:
             if blocked in cmd_lower:
@@ -131,7 +111,6 @@ class TerminalSkill(BaseSkill):
                     message=f"Comando bloqueado por seguridad: {command}",
                 )
 
-        # Validate through SecurityGuardian if available
         guardian = context.get("security_guardian") or context.get("guardian")
         if guardian is not None:
             try:
@@ -148,7 +127,6 @@ class TerminalSkill(BaseSkill):
             except Exception as exc:
                 log.warning("terminal.guardian_error", error=str(exc))
 
-        # Check if command needs approval
         needs_approval = any(
             cmd_lower.startswith(prefix) for prefix in _DANGEROUS_PREFIXES
         )
@@ -175,7 +153,6 @@ class TerminalSkill(BaseSkill):
                         message="Ejecucion cancelada por el usuario.",
                     )
             else:
-                # No approval mechanism available — reject dangerous commands
                 return SkillResult(
                     success=False,
                     message=(
@@ -184,14 +161,12 @@ class TerminalSkill(BaseSkill):
                     ),
                 )
 
-        # Execute via SandboxedExecutor or fallback to asyncio subprocess
         executor = context.get("sandbox") or context.get("executor")
         if executor is not None:
             return await self._run_sandboxed(command, executor)
         return await self._run_subprocess(command)
 
     async def _run_sandboxed(self, command: str, executor: Any) -> SkillResult:
-        """Run via a SandboxedExecutor instance."""
         log.info("terminal.execute_sandboxed", command=command)
         try:
             result = await executor.run(command)
@@ -206,7 +181,6 @@ class TerminalSkill(BaseSkill):
             return SkillResult(success=False, message=f"Error ejecutando comando: {exc}")
 
     async def _run_subprocess(self, command: str) -> SkillResult:
-        """Run *command* as a subprocess and return captured output."""
         log.info("terminal.execute", command=command)
 
         try:
@@ -246,7 +220,6 @@ class TerminalSkill(BaseSkill):
     def _format_output(
         self, command: str, stdout: str, stderr: str, exit_code: int
     ) -> SkillResult:
-        """Format command output into a SkillResult."""
         output_parts: list[str] = []
         if stdout:
             output_parts.append(stdout)
@@ -255,7 +228,6 @@ class TerminalSkill(BaseSkill):
 
         output = "\n".join(output_parts) if output_parts else "(sin salida)"
 
-        # Truncate if too long
         if len(output) > _MAX_OUTPUT:
             output = (
                 output[:_MAX_OUTPUT]

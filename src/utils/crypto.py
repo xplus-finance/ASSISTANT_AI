@@ -1,4 +1,4 @@
-"""Cryptographic utilities: AES-256-GCM encryption, bcrypt PIN hashing, session IDs."""
+"""AES-256-GCM encryption, bcrypt PIN hashing, session ID generation."""
 
 import base64
 import hashlib
@@ -12,12 +12,10 @@ _NONCE_SIZE = 12  # 96-bit GCM nonce
 
 
 def _derive_key(key: str) -> bytes:
-    """Derive a 256-bit key from an arbitrary string via SHA-256."""
     return hashlib.sha256(key.encode("utf-8")).digest()
 
 
 def encrypt_value(value: str, key: str) -> str:
-    """Return base64-encoded nonce+ciphertext+tag (AES-256-GCM)."""
     if not value:
         raise ValueError("Cannot encrypt an empty value")
     if not key:

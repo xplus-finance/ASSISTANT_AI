@@ -1,10 +1,4 @@
-"""
-Core memory engine backed by SQLite via APSW.
-
-Provides the database connection, schema initialization, and low-level
-query helpers used by every other memory module. Supports optional
-SQLCipher encryption when an encryption key is provided.
-"""
+"""SQLite memory engine backed by APSW with optional SQLCipher encryption."""
 
 from __future__ import annotations
 
@@ -16,10 +10,6 @@ import apsw
 import structlog
 
 log = structlog.get_logger("assistant.memory")
-
-# ---------------------------------------------------------------------------
-# Schema DDL
-# ---------------------------------------------------------------------------
 
 _PRAGMAS = """
 PRAGMA journal_mode = WAL;
@@ -68,7 +58,7 @@ CREATE TABLE IF NOT EXISTS user_profile (
 
 CREATE TABLE IF NOT EXISTS learned_facts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    category TEXT NOT NULL CHECK(category IN ('user', 'project', 'preference', 'technical', 'world')),
+    category TEXT NOT NULL,
     fact TEXT NOT NULL,
     confidence REAL DEFAULT 1.0 CHECK(confidence BETWEEN 0 AND 1),
     source TEXT,
@@ -185,7 +175,6 @@ CREATE TABLE IF NOT EXISTS security_audit (
 );
 """
 
-# Indexes for common query patterns
 _INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_conversations_session
     ON conversations(session_id, timestamp);
@@ -207,14 +196,7 @@ CREATE INDEX IF NOT EXISTS idx_session_summaries_session
 
 
 class MemoryEngine:
-    """
-    Central database engine for all assistant memory.
 
-    Thread-safe: each public method acquires a lock before touching the
-    connection.  APSW itself allows sharing a connection across threads
-    when using WAL mode, but the lock prevents interleaved multi-statement
-    transactions.
-    """
 
     def __init__(self, db_path: str, encryption_key: str | None = None) -> None:
         self._db_path = str(Path(db_path).resolve())
@@ -225,12 +207,7 @@ class MemoryEngine:
         self._init_db()
         log.info("memory_engine.ready", db_path=self._db_path, encrypted=bool(encryption_key))
 
-    # ------------------------------------------------------------------
-    # Connection management
-    # ------------------------------------------------------------------
-
     def _open(self) -> None:
-        """Open the APSW connection (create file if needed)."""
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = apsw.Connection(self._db_path)
         if self._encryption_key:
@@ -250,16 +227,13 @@ class MemoryEngine:
                 )
 
     def _init_db(self) -> None:
-        """Create all tables, FTS indexes, triggers and performance indexes."""
         assert self._conn is not None
         with self._lock:
-            # Pragmas must be executed one at a time (no multi-statement)
             for line in _PRAGMAS.strip().splitlines():
                 line = line.strip()
                 if line and not line.startswith("--"):
                     self._conn.execute(line)
 
-            # Tables, triggers, virtual tables
             self._conn.execute("BEGIN")
             try:
                 for statement in _split_statements(_TABLES):
@@ -271,34 +245,25 @@ class MemoryEngine:
                 self._conn.execute("ROLLBACK")
                 raise
 
-    # ------------------------------------------------------------------
-    # Public query helpers — always use parameterised queries
-    # ------------------------------------------------------------------
-
     def execute(self, sql: str, params: Sequence[Any] = ()) -> apsw.Cursor:
-        """Execute a single SQL statement with parameters. Returns a cursor."""
         assert self._conn is not None, "MemoryEngine is closed"
         with self._lock:
             return self._conn.execute(sql, tuple(params))
 
     def execute_many(self, sql: str, param_seq: Sequence[Sequence[Any]]) -> None:
-        """Execute a statement for each set of parameters."""
         assert self._conn is not None, "MemoryEngine is closed"
         with self._lock:
             for params in param_seq:
                 self._conn.execute(sql, tuple(params))
 
     def fetchone(self, sql: str, params: Sequence[Any] = ()) -> tuple[Any, ...] | None:
-        """Execute and return the first row, or None."""
         cursor = self.execute(sql, params)
         return next(cursor, None)  # type: ignore[arg-type]
 
     def fetchall(self, sql: str, params: Sequence[Any] = ()) -> list[tuple[Any, ...]]:
-        """Execute and return all rows as a list of tuples."""
         return list(self.execute(sql, params))
 
     def fetchall_dicts(self, sql: str, params: Sequence[Any] = ()) -> list[dict[str, Any]]:
-        """Execute and return all rows as a list of dicts (column-name keys)."""
         assert self._conn is not None, "MemoryEngine is closed"
         with self._lock:
             cursor = self._conn.execute(sql, tuple(params))
@@ -311,7 +276,6 @@ class MemoryEngine:
             return [dict(zip(columns, row)) for row in cursor]
 
     def insert_returning_id(self, sql: str, params: Sequence[Any] = ()) -> int:
-        """Execute an INSERT and return last_insert_rowid()."""
         assert self._conn is not None, "MemoryEngine is closed"
         with self._lock:
             self._conn.execute(sql, tuple(params))
@@ -319,17 +283,11 @@ class MemoryEngine:
             return row[0]  # type: ignore[index]
 
     def last_insert_rowid(self) -> int:
-        """Return the rowid of the last INSERT (must be called under lock)."""
         assert self._conn is not None
         row = next(self._conn.execute("SELECT last_insert_rowid()"))
         return row[0]  # type: ignore[index]
 
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
-
     def close(self) -> None:
-        """Close the database connection gracefully."""
         if self._conn is not None:
             with self._lock:
                 self._conn.close()
@@ -346,24 +304,12 @@ class MemoryEngine:
         self.close()
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 import re as _re
 
-# Characters that have special meaning in FTS5 query syntax
 _FTS5_SPECIAL = _re.compile(r'["\*\(\)\+\-\:\^\{\}\~\?\|]')
 
 
 def sanitize_fts_query(query: str) -> str:
-    """
-    Sanitize a user-provided string for safe use in an FTS5 MATCH clause.
-
-    Strips FTS5 special characters and wraps each remaining token in
-    double quotes to force literal matching.  Returns an empty string
-    if nothing usable remains.
-    """
     # Remove special chars
     cleaned = _FTS5_SPECIAL.sub(" ", query)
     tokens = cleaned.split()
@@ -374,12 +320,6 @@ def sanitize_fts_query(query: str) -> str:
 
 
 def _split_statements(sql_block: str) -> list[str]:
-    """
-    Split a multi-statement SQL block into individual statements.
-
-    Handles CREATE TRIGGER ... END; blocks properly by tracking BEGIN/END
-    nesting.
-    """
     statements: list[str] = []
     current: list[str] = []
     in_trigger = False

@@ -1,8 +1,5 @@
 """Audio processing: format conversion, speech-to-text, text-to-speech."""
 
-# All audio imports are guarded so that Python 3.13 / missing pydub
-# doesn't crash the entire module load (gateway handles None gracefully).
-
 try:
     from src.audio.processor import (
         convert_ogg_to_wav,

@@ -1,9 +1,4 @@
-"""
-Task management skill — create, list, update, and cancel tasks.
-
-Tasks are stored in the ``tasks`` table (defined in MemoryEngine schema)
-and support recurring schedules and project tagging.
-"""
+"""Task management skill: create, list, update, cancel."""
 
 from __future__ import annotations
 
@@ -18,7 +13,7 @@ log = structlog.get_logger("assistant.skills.tasks")
 
 
 class TasksSkill(BaseSkill):
-    """CRUD operations for the assistant's task list."""
+
 
     def __init__(self, memory_engine: MemoryEngine | None = None) -> None:
         self._memory = memory_engine
@@ -36,17 +31,6 @@ class TasksSkill(BaseSkill):
         return ["!tareas", "!tarea"]
 
     async def execute(self, args: str, context: dict[str, Any]) -> SkillResult:
-        """
-        Handle task operations.
-
-        Sub-commands:
-            ``!tareas``             — list pending tasks
-            ``!tarea nueva <titulo>`` — create a task
-            ``!tarea hecha <id>``   — mark as done
-            ``!tarea cancelar <id>`` — cancel a task
-            ``!tarea detalle <id>`` — show task details
-            ``!tareas todas``       — show all tasks including done/cancelled
-        """
         memory = self._memory or context.get("memory")
         if memory is None:
             return SkillResult(success=False, message="Motor de memoria no disponible.")
@@ -93,19 +77,13 @@ class TasksSkill(BaseSkill):
             # Treat unknown subcommand as task creation
             return self._create(memory, args)
 
-    # ------------------------------------------------------------------
-    # Handlers
-    # ------------------------------------------------------------------
-
     def _create(self, memory: MemoryEngine, title: str) -> SkillResult:
-        """Create a new task."""
         if not title.strip():
             return SkillResult(
                 success=False,
                 message="Uso: !tarea nueva <titulo de la tarea>",
             )
 
-        # Check for optional project tag: "titulo #proyecto"
         project = None
         if "#" in title:
             parts = title.rsplit("#", 1)
@@ -127,7 +105,6 @@ class TasksSkill(BaseSkill):
         return SkillResult(success=True, message=msg, data={"id": task_id})
 
     def _mark_done(self, memory: MemoryEngine, args: str) -> SkillResult:
-        """Mark a task as done."""
         task_id = self._parse_id(args)
         if task_id is None:
             return SkillResult(
@@ -154,7 +131,6 @@ class TasksSkill(BaseSkill):
         )
 
     def _cancel(self, memory: MemoryEngine, args: str) -> SkillResult:
-        """Cancel a task."""
         task_id = self._parse_id(args)
         if task_id is None:
             return SkillResult(success=False, message="Uso: !tarea cancelar <id>")
@@ -175,7 +151,6 @@ class TasksSkill(BaseSkill):
         )
 
     def _detail(self, memory: MemoryEngine, args: str) -> SkillResult:
-        """Show task details."""
         task_id = self._parse_id(args)
         if task_id is None:
             return SkillResult(success=False, message="Uso: !tarea detalle <id>")
@@ -204,7 +179,6 @@ class TasksSkill(BaseSkill):
         return SkillResult(success=True, message="\n".join(lines), data=task)
 
     def _list_pending(self, memory: MemoryEngine) -> SkillResult:
-        """List tasks with status pending or in_progress."""
         rows = memory.fetchall_dicts(
             """
             SELECT id, title, status, project, created_at
@@ -241,7 +215,6 @@ class TasksSkill(BaseSkill):
         )
 
     def _list_all(self, memory: MemoryEngine) -> SkillResult:
-        """List all tasks including completed and cancelled."""
         rows = memory.fetchall_dicts(
             """
             SELECT id, title, status, project, created_at
@@ -272,13 +245,8 @@ class TasksSkill(BaseSkill):
             data={"tasks": rows},
         )
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _parse_id(text: str) -> int | None:
-        """Parse a task ID from text, stripping '#' prefix if present."""
         text = text.strip().lstrip("#")
         try:
             return int(text)

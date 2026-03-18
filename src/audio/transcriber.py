@@ -1,8 +1,4 @@
-"""Speech-to-Text transcription using faster-whisper.
-
-Provides a lazy-loading Transcriber that auto-detects CPU/GPU
-and downloads models on first use.
-"""
+"""Speech-to-Text via faster-whisper with lazy model loading."""
 
 from __future__ import annotations
 
@@ -17,7 +13,6 @@ VALID_MODEL_SIZES = ("tiny", "base", "small", "medium", "large-v3")
 
 @dataclass(frozen=True)
 class TranscriptionResult:
-    """Result of a speech-to-text transcription."""
     text: str
     language: str
     duration: float
@@ -25,7 +20,7 @@ class TranscriptionResult:
 
 
 class Transcriber:
-    """Speech-to-Text engine backed by faster-whisper."""
+
 
     def __init__(self, model_size: str = "medium", device: str = "auto") -> None:
         if model_size not in VALID_MODEL_SIZES:
