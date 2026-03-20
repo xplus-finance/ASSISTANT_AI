@@ -19,23 +19,29 @@ Asistente privado que corre en tu maquina y se comunica via Telegram o WhatsApp.
 
 ## Que es esto
 
-Un asistente personal que vive en tu computadora. Se comunica contigo por Telegram o WhatsApp, ejecuta comandos en tu sistema, recuerda todo entre sesiones, busca informacion en la web, programa tareas, trabaja en tus proyectos de codigo y aprende tus preferencias.
+Un asistente personal que vive en tu computadora. Se comunica contigo por Telegram o WhatsApp, ejecuta comandos en tu sistema, busca informacion en la web, programa tareas, trabaja en tus proyectos de codigo y aprende tus preferencias.
 
-Un solo usuario autorizado. Nadie mas puede interactuar con el. Todos los datos almacenados localmente — nada sale de tu maquina.
+Incluye una mascota de escritorio animada que reacciona en tiempo real: teclea cuando el agente piensa, corre cuando ejecuta tareas, duerme cuando no hay actividad, y camina libremente por todos tus monitores.
 
-55 archivos fuente Python. 14 skills integradas. 8 capas de seguridad.
+Un solo usuario autorizado. Nadie mas puede interactuar con el. Todos los datos almacenados localmente.
+
+~60 archivos fuente Python. 14 skills integradas. 8 capas de seguridad. Auto-aprendizaje profundo. Mascota de escritorio.
 
 ---
 
 ## Capacidades
 
-| Memoria permanente | Seguridad en 8 capas | Voz entrada/salida |
+| Auto-aprendizaje profundo | Mascota de escritorio | Voz entrada/salida |
 |---|---|---|
-| Conversaciones, hechos y preferencias en SQLite cifrado con AES-256. Persistente entre reinicios. Historial cruzado de 7 dias entre sesiones. | Autenticacion, PIN bcrypt, sanitizacion, deteccion de prompt injection, escaneo de salida, rate limiting, permisos automaticos, ejecucion en sandbox. | Notas de voz con faster-whisper (local). Multiples motores TTS: chatterbox, espeak, gTTS, pyttsx3. |
+| Aprende de cada interaccion: registra ejecuciones, patrones de exito, errores y sus soluciones. Clasifica tareas en 7 tipos y aplica el mejor metodo aprendido. Cada tarea repetida le cuesta menos tiempo. | 5 mascotas (perro, gato, robot, zorro, buho) con 6 animaciones en 5 direcciones. Reacciona al estado del agente: teclea, corre por los monitores, duerme, se entristece. Arrastrable, multi-monitor, sticky en todos los workspaces. | Notas de voz con faster-whisper (local). Multiples motores TTS: chatterbox, espeak, gTTS, pyttsx3. |
 
-| Auto-evolucion | Multi-plataforma | Escritorio |
+| Memoria permanente | Seguridad en 8 capas | Multi-plataforma |
 |---|---|---|
-| Crea sus propias skills y servidores MCP en tiempo de ejecucion. Hot-reload con auto-restart. Validacion de sintaxis y backups automaticos. | Windows 10+ (PowerShell, Task Scheduler), Linux (apt/dnf/pacman, systemd), macOS (Homebrew, launchd). Mismo codigo, mismas funciones. | Control de ventanas, capturas de pantalla, escaneo de pestanas del navegador, escritura en teclado. Soporte dual monitor. |
+| Conversaciones, hechos, procedimientos, ejecuciones, patrones y errores en SQLite cifrado con AES-256. Historial cruzado de 365 dias. Deduplicacion automatica. | Autenticacion, PIN bcrypt, sanitizacion, deteccion de prompt injection, escaneo de salida, rate limiting, permisos automaticos, ejecucion en sandbox. | Windows 10+ (PowerShell, Task Scheduler), Linux (apt/dnf/pacman, systemd), macOS (Homebrew, launchd). Mismo codigo. |
+
+| Auto-evolucion | Control de escritorio | Clasificacion de tareas |
+|---|---|---|
+| Crea skills y servidores MCP en runtime. Hot-reload con auto-restart. Validacion y backups automaticos. | Capturas de pantalla, gestion de ventanas, escaneo de pestanas del navegador, escritura en teclado. Soporte dual monitor. | Clasifica automaticamente cada mensaje en 7 tipos (email, desktop, code, search, file, command, general) para aplicar el mejor metodo aprendido. |
 
 ---
 
@@ -59,7 +65,7 @@ cd ASSISTANT_AI
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-Ambos instaladores son interactivos y paso a paso. Tiempo estimado: 5-10 minutos.
+Ambos instaladores son interactivos, paso a paso, con 11 pasos incluyendo configuracion de la mascota de escritorio. Tiempo estimado: 5-10 minutos.
 
 > El instalador es idempotente — seguro ejecutar multiples veces.
 
@@ -74,7 +80,40 @@ Ambos instaladores son interactivos y paso a paso. Tiempo estimado: 5-10 minutos
 | **Claude Code CLI** | Ultimo | `npm install -g @anthropic-ai/claude-code` (requiere suscripcion Pro o Max) |
 | **ffmpeg** | Cualquiera | Procesamiento de audio (instalado automaticamente) |
 | **Node.js** | 18+ | Solo para canal WhatsApp Baileys |
+| **PyQt6** | Opcional | Mascota de escritorio (`pip install PyQt6`, instalado automaticamente si activas la mascota) |
 | **GPU CUDA** | Opcional | Transcripcion mas rapida con faster-whisper |
+
+---
+
+## Mascota de escritorio
+
+5 mascotas animadas que viven en tu escritorio y reaccionan al estado del agente:
+
+| Mascota | Estilo |
+|---------|--------|
+| Perro (Golden Retriever) | Fiel, mueve la cola, se duerme acurrucado |
+| Gato (Naranja atigrado) | Elegante, camina con gracia felina |
+| Robot | Luces LED, antena, jets al correr |
+| Zorro (Rojo) | Cola frondosa, trot elegante |
+| Buho (Gran Buho Real) | Ojazos, gira la cabeza, vuela |
+
+| Estado del agente | Animacion de la mascota | Comportamiento |
+|---|---|---|
+| Esperando | Idle / Walk | Camina libremente por todos los monitores |
+| Procesando tu mensaje | Type | Se sienta y teclea en un teclado |
+| Ejecutando tarea | Run | Corre por todos los monitores |
+| Error | Sad | Se sienta triste, no se mueve |
+| 5 min sin actividad | Sleep | Se duerme, no se mueve |
+
+Sprites en 5 direcciones (side, front, back, front_side, back_side). Movimiento 2D libre. Sticky en todos los workspaces (Linux/macOS). Clic derecho para cambiar mascota o ver animaciones.
+
+Para activar, agrega a `.env`:
+```
+PET_ENABLED=true
+PET_TYPE=dog
+```
+
+Para usar sprites propios, reemplaza los PNG en `src/pet/assets/{animal}/`.
 
 ---
 
@@ -111,30 +150,43 @@ Ambos instaladores son interactivos y paso a paso. Tiempo estimado: 5-10 minutos
 
 ---
 
-## Comandos
+## Memoria y auto-aprendizaje
 
-| Categoria | Comando | Descripcion |
-|-----------|---------|-------------|
-| Info | `!status` | Estado del sistema, uptime, uso de recursos |
-| Info | `!yo` | Tu perfil: preferencias aprendidas, estadisticas |
-| Info | `!help` | Lista de comandos disponibles |
-| Memoria | `!memoria` | Ver memorias almacenadas |
-| Memoria | `!memoria buscar <texto>` | Buscar en memoria |
-| Memoria | `!recuerda <texto>` | Guardar en memoria permanente |
-| Tareas | `!tareas` | Ver tareas pendientes |
-| Tareas | `!tarea nueva <desc>` | Crear tarea |
-| Tareas | `recuerdame [algo] a las [hora]` | Recordatorio en lenguaje natural |
-| Web | `!busca <query>` | Busqueda web (DuckDuckGo, sin API key) |
-| Web | `!aprende <url>` | Obtener y aprender de una URL |
-| Terminal | `!cmd <comando>` | Ejecutar en sandbox |
-| Desktop | `!screenshot` | Captura de pantalla |
-| Skills | `!skills` | Listar skills disponibles |
-| Skills | `!skill crear <desc>` | Crear nueva skill |
-| MCP | `!mcp crear <desc>` | Crear e instalar servidor MCP |
-| MCP | `!mcp list` | Listar servidores MCP |
-| Audio | `!voz on/off/auto` | Controlar respuestas de voz |
+| Tipo | Persistencia | Descripcion |
+|------|-------------|-------------|
+| **Hechos permanentes** | Indefinida | Datos extraidos automaticamente de cada conversacion, con deduplicacion |
+| **Procedimientos** | Indefinida | Lecciones aprendidas: que funciono, que fallo, trucos descubiertos |
+| **Registro de ejecuciones** | Indefinida | Cada tarea registrada: tipo, duracion, metodo, exito/fallo |
+| **Patrones de tareas** | Indefinida | Mejores metodos por tipo de tarea con tasa de exito acumulada |
+| **Errores y soluciones** | Indefinida | Errores encontrados y como se resolvieron, para no repetirlos |
+| **Resumenes de sesion** | Indefinida | Resumen automatico al cerrar cada sesion |
+| **Historial cruzado** | 365 dias | Contexto de sesiones anteriores disponible en nuevas conversaciones |
+| **Base de conocimiento** | Indefinida | Informacion obtenida de busquedas web y URLs |
 
-El asistente entiende lenguaje natural. Los comandos son atajos directos.
+El system prompt se enriquece automaticamente con historial de ejecuciones similares, estadisticas de exito, mejores metodos aprendidos y errores conocidos a evitar.
+
+SQLite local con cifrado AES-256 opcional (SQLCipher via APSW). Indices FTS5 para busqueda full-text.
+
+---
+
+## Variables de entorno
+
+| Variable | Requerida | Default | Descripcion |
+|----------|-----------|---------|-------------|
+| `TELEGRAM_BOT_TOKEN` | Si | — | Token de @BotFather |
+| `AUTHORIZED_CHAT_ID` | Si | — | Tu Chat ID de Telegram |
+| `SECURITY_PIN` | No | *(vacio)* | PIN para operaciones sensibles |
+| `CLAUDE_CLI_PATH` | No | `claude` | Ruta al ejecutable Claude CLI |
+| `PROJECTS_BASE_DIR` | No | *(auto)* | Directorio base para proyectos |
+| `DB_ENCRYPTION_KEY` | No | *(vacio)* | Clave de cifrado de DB (generada por el instalador) |
+| `WHISPER_MODEL` | No | `medium` | Modelo STT: tiny, base, small, medium, large-v3 |
+| `TTS_ENGINE` | No | `auto` | Motor TTS: auto, chatterbox, espeak |
+| `PET_ENABLED` | No | `false` | Activar mascota de escritorio (requiere PyQt6) |
+| `PET_TYPE` | No | `dog` | Tipo de mascota: dog, cat, robot, fox, owl |
+| `PET_SIZE` | No | `96` | Tamano del sprite en pixeles |
+| `PET_MONITOR` | No | `0` | Monitor donde aparece (0 = primario) |
+| `TIMEZONE` | No | `America/New_York` | Zona horaria para tareas programadas |
+| `LOG_LEVEL` | No | `INFO` | Nivel de logging |
 
 ---
 
@@ -155,81 +207,20 @@ El asistente entiende lenguaje natural. Los comandos son atajos directos.
          |
          v
 +---------------------+
-|   Gateway            |  Orquestador central - Pipeline de mensajes
-+---+--------+--------+  Sesiones - Onboarding - Context builder
-    |        |
-    v        v
-+--------+ +--------------+
-| Memory | | Claude Code   |  Cerebro (usa tu suscripcion, NO API key)
-| Engine | | Bridge        |  Sesion persistente - Fallback one-shot
-+--------+ +------+-------+
+|   Gateway            |  Orquestador central - Task classifier - Execution tracker
++---+--------+--------+  Sesiones - Context builder - Auto-learning
+    |        |     |
+    v        v     v
++--------+ +------+------+ +-------------+
+| Memory | | Claude Code  | | Desktop Pet |
+| Engine | | Bridge       | | (PyQt6)     |
++--------+ +------+------+ +-------------+
                   |
            +------+------+
            |   Skills     |  14 built-in + runtime creation
            |   Registry   |  Hot-reload - Watchdog
            +-------------+
 ```
-
-El asistente ejecuta Claude Code como proceso separado — nunca interfiere con tus sesiones propias de Claude Code.
-
----
-
-## Seguridad
-
-| Capa | Mecanismo |
-|------|-----------|
-| **Autenticacion** | Solo el `AUTHORIZED_CHAT_ID` configurado puede interactuar. Resto rechazado silenciosamente. |
-| **PIN** | Operaciones sensibles requieren PIN con hash bcrypt. Nunca en texto plano. |
-| **Sanitizacion** | FTS5 query sanitization, prevencion de path traversal, bloqueo SSRF en IPs privadas. |
-| **Prompt injection** | 28 patrones regex detectan intentos de inyeccion. Registrados en audit log. |
-| **Escaneo de salida** | Respuestas escaneadas por tokens, keys y passwords filtrados antes de enviar. |
-| **Rate limiting** | Limite configurable de mensajes por minuto. |
-| **Permisos** | Endurecimiento automatico al arrancar: `.env` (600), `data/` (700), `logs/` (700). |
-| **Sandbox** | bubblewrap (Linux), subprocess con timeout (Windows/macOS). |
-
----
-
-## Auto-evolucion
-
-- **Hot-reload**: Cambios en modulos utilitarios se aplican via `importlib.reload()` sin reiniciar
-- **Auto-restart**: Cambios en modulos core disparan restart completo (`os.execv`)
-- **Validacion**: Cada modificacion validada con `ast.parse()` antes de aplicar
-- **Backups**: Archivos originales respaldados en `.backups/` antes de cualquier cambio
-- **Skills**: Nuevas skills creadas en runtime, cargadas por el registry con watchdog
-- **MCP**: Genera, instala (venv + deps) y registra servidores MCP automaticamente
-
-Con systemd, `Restart=always` recupera de cualquier fallo en 10 segundos.
-
----
-
-## Memoria
-
-| Tipo | Persistencia | Descripcion |
-|------|-------------|-------------|
-| **Hechos permanentes** | Indefinida | Datos guardados explicitamente con `!recuerda` |
-| **Procedimientos** | Indefinida | Lecciones aprendidas de errores, nunca se repiten |
-| **Resumenes de sesion** | Indefinida | Resumen automatico al cerrar cada sesion |
-| **Historial cruzado** | 7 dias | Contexto de sesiones anteriores disponible en nuevas conversaciones |
-| **Base de conocimiento** | Indefinida | Informacion obtenida de busquedas web y URLs |
-
-Todo almacenado en SQLite local con cifrado opcional AES-256 via SQLCipher (APSW). Indices FTS5 para busqueda full-text.
-
----
-
-## Variables de entorno
-
-| Variable | Requerida | Default | Descripcion |
-|----------|-----------|---------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Si | — | Token de @BotFather |
-| `AUTHORIZED_CHAT_ID` | Si | — | Tu Chat ID de Telegram |
-| `SECURITY_PIN` | No | *(vacio)* | PIN para operaciones sensibles |
-| `CLAUDE_CLI_PATH` | No | `claude` | Ruta al ejecutable Claude CLI |
-| `PROJECTS_BASE_DIR` | No | *(auto)* | Directorio base para proyectos |
-| `DB_ENCRYPTION_KEY` | No | *(vacio)* | Clave de cifrado de DB (generada por el instalador) |
-| `WHISPER_MODEL` | No | `medium` | Modelo STT: tiny, base, small, medium, large-v3 |
-| `TTS_ENGINE` | No | `auto` | Motor TTS: auto, chatterbox, espeak |
-| `TIMEZONE` | No | `America/New_York` | Zona horaria para tareas programadas |
-| `LOG_LEVEL` | No | `INFO` | Nivel de logging |
 
 ---
 
@@ -278,6 +269,8 @@ El instalador configura una tarea en Task Scheduler que arranca el asistente al 
 | Error de audio/whisper | Verificar ffmpeg: `ffmpeg -version` |
 | `claude: command not found` | `npm install -g @anthropic-ai/claude-code` |
 | Tarea alcanza max turns | Dividir en pasos mas pequenos |
+| Mascota no aparece | Verificar `PET_ENABLED=true` en .env y PyQt6 instalado |
+| Mascota no se ve en Linux | Instalar `libxcb-cursor0` (Ubuntu/Debian) |
 
 ---
 
@@ -326,18 +319,23 @@ MIT — ver [LICENSE](LICENSE).
 
 ### What is this
 
-A private, self-hosted assistant that runs on your machine and communicates via Telegram or WhatsApp. It uses Claude Code CLI with your existing subscription — no API keys, no per-token costs.
+A private, self-hosted assistant that runs on your machine and communicates via Telegram or WhatsApp. Uses Claude Code CLI with your existing subscription — no API keys, no per-token costs.
 
-55 Python source files. 14 built-in skills. 8 security layers. Runs on Windows 10+, Linux and macOS.
+Includes an animated desktop pet that reacts in real time: types when the agent thinks, runs across monitors when executing tasks, sleeps when inactive, and walks freely across all your screens.
+
+~60 Python source files. 14 built-in skills. 8 security layers. Deep auto-learning. Desktop pet companion. Runs on Windows 10+, Linux and macOS.
 
 ### What it does
 
-- **Permanent memory**: facts, procedures learned from mistakes, session summaries, 7-day cross-session history. SQLite with optional AES-256 encryption.
+- **Deep auto-learning**: logs every execution (type, duration, method, success/fail), learns best methods per task type, remembers error solutions, deduplicates facts. Each repeated task gets faster.
+- **Desktop pet**: 5 pets (dog, cat, robot, fox, owl) with 6 animations in 5 directions. Reacts to agent state: types when processing, runs across monitors when executing, sleeps when inactive. Draggable, multi-monitor, sticky on all workspaces.
+- **Permanent memory**: facts, procedures, session summaries, 365-day cross-session history. SQLite with optional AES-256 encryption.
 - **14 skills**: terminal, files, memory, tasks, learning, desktop control, MCP server creation, skill creation, Claude Code integration, system monitor, file search, git, network diagnostics, package management.
 - **Voice**: faster-whisper STT (local), multiple TTS engines (chatterbox, espeak, gTTS, pyttsx3).
-- **Security**: authentication, bcrypt PIN, input sanitization, prompt injection detection (28 patterns), output scanning, rate limiting, auto-hardened file permissions, sandboxed execution.
+- **Security**: 8 layers — authentication, bcrypt PIN, input sanitization, prompt injection detection (28 patterns), output scanning, rate limiting, auto-hardened file permissions, sandboxed execution.
 - **Self-evolution**: creates its own skills and MCP servers at runtime. Hot-reload with syntax validation and automatic backups.
-- **Desktop**: screenshots, window management, browser tab scanning, keyboard input. Dual monitor support.
+- **Task classification**: auto-classifies messages into 7 types (email, desktop, code, search, file, command, general) and applies best learned method.
+- **Desktop control**: screenshots, window management, browser tab scanning, keyboard input. Dual monitor support.
 - **Cross-platform**: Windows (PowerShell installer, Task Scheduler), Linux (apt/dnf/pacman, systemd), macOS (Homebrew, launchd).
 
 ### Quick start
@@ -362,30 +360,8 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 | Claude Code CLI | Latest (`npm install -g @anthropic-ai/claude-code`) |
 | ffmpeg | Any (auto-installed) |
 | Node.js 18+ | Only for WhatsApp Baileys |
+| PyQt6 | Optional (desktop pet) |
 | CUDA GPU | Optional (faster whisper) |
-
-### Built-in skills
-
-| Skill | Purpose |
-|-------|---------|
-| terminal | Execute system commands in sandbox |
-| files | Read, write, search and manage files |
-| memory | Query and store permanent memory |
-| tasks | Create tasks, reminders, scheduled execution |
-| learning | Web search and knowledge storage |
-| desktop_control | Screenshots, window management, keyboard |
-| mcp_creator | Generate, install and register MCP servers |
-| skill_creator | Create new skills at runtime |
-| claude_code | Claude Code integration for code projects |
-| system_monitor | System status: CPU, RAM, disk, processes |
-| file_search | Advanced file search by name/content |
-| git | Git operations: status, commit, diff, log, branches |
-| network | Network diagnostics: ping, DNS, ports, interfaces |
-| package_manager | System packages (apt/dnf/pacman/brew/winget) |
-
-### Security
-
-8 layers: chat ID authentication, bcrypt PIN, input sanitization, prompt injection detection, output scanning, rate limiting, automatic file permission hardening, sandboxed execution (bubblewrap on Linux, subprocess with timeout on Windows/macOS).
 
 ### License
 

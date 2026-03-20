@@ -42,6 +42,12 @@ class Settings(BaseSettings):
 
     db_encryption_key: str = ""
 
+    # Desktop pet
+    pet_enabled: str = "false"
+    pet_type: str = "dog"
+    pet_size: int = 96
+    pet_monitor: int = 0
+
     timezone: str = "America/New_York"
     log_level: str = "INFO"
 

@@ -2,17 +2,19 @@
 
 ## Architecture
 
-Python 3.12+ asyncio application. Single-user Telegram/WhatsApp bot powered by Claude Code CLI. 55 source files, 14 built-in skills.
+Python 3.12+ asyncio application. Single-user Telegram/WhatsApp bot powered by Claude Code CLI. ~60 source files, 14 built-in skills, deep auto-learning system, animated desktop pet.
 
 ### Core Pipeline
 ```
 Incoming message → SecurityGuardian (auth + rate limit + injection detect)
-    → Gateway (session mgmt, onboarding, context building, routing)
+    → Gateway (session mgmt, task classification, context building, routing)
     → ClaudeBridge (persistent session or one-shot CLI)
     → Response (output validation → send via channel)
+    → Auto-learning (execution log, pattern update, error tracking)
+    → Pet state update (type/run/sad/sleep/idle)
 ```
 
-### Module Map (55 files)
+### Module Map (~60 files)
 ```
 src/
   __init__.py              — Package init
@@ -22,7 +24,8 @@ src/
   core/
     __init__.py
     gateway.py              — Central orchestrator, message pipeline, system prompt,
-                             voice detection, skill routing, screenshot/file sending
+                             voice detection, skill routing, screenshot/file sending,
+                             task classification, execution tracking, auto-learning
     security.py             — SecurityGuardian: auth, command validation, path validation,
                              prompt injection detection (28 patterns), output scanning
     claude_bridge.py        — Persistent CLI session (stream-json) with one-shot fallback,
@@ -36,12 +39,17 @@ src/
   memory/
     __init__.py
     engine.py               — APSW-based SQLite with optional SQLCipher. FTS5 indexes.
-                             sanitize_fts_query() for safe full-text search
+                             sanitize_fts_query() for safe full-text search.
+                             Tables: conversations, user_profile, learned_facts,
+                             tasks, projects, knowledge, skills, session_summaries,
+                             security_audit, execution_log, task_patterns, error_solutions
     conversation.py         — ConversationStore with FTS search
-    context.py              — Context builder: assembles conversation history + memory for Claude
+    context.py              — Context builder: assembles conversation history + memory +
+                             execution history + error patterns + task patterns for Claude
     relationships.py        — RelationshipTracker
     tasks.py                — TaskManager with scheduling support
-    learning.py             — LearningStore (facts + knowledge)
+    learning.py             — LearningStore (facts + knowledge + execution log +
+                             task patterns + error solutions + fact deduplication)
 
   learning/
     __init__.py
@@ -54,6 +62,17 @@ src/
     transcriber.py          — faster-whisper STT (guarded import for Python 3.13+)
     processor.py            — OGG/WAV conversion via pydub (guarded import)
     synthesizer.py          — TTS: chatterbox, espeak, gTTS, pyttsx3
+
+  pet/
+    __init__.py
+    overlay.py              — PyQt6 frameless transparent window, always-on-top,
+                             draggable, multi-monitor, right-click context menu
+    sprite_engine.py        — Sprite sheet loader, frame animation, QPixmap crops
+    behavior.py             — State machine: AgentState → animation mapping,
+                             transient states, inactivity timeout (5min → sleep)
+    bridge.py               — PetBridge: child process management via multiprocessing,
+                             state queue, auto-relaunch on crash
+    assets/{dog,cat,robot,fox,owl}/ — 6 sprite sheets each (idle,walk,type,run,sad,sleep)
 
   channels/
     __init__.py

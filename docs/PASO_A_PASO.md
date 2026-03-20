@@ -20,7 +20,7 @@ cd /ruta/al/ASSISTANT_AI
 bash install.sh
 ```
 
-Detecta el gestor de paquetes (apt, dnf, pacman, brew) e instala dependencias faltantes (ffmpeg, bubblewrap) automaticamente.
+Detecta el gestor de paquetes (apt, dnf, pacman, brew) e instala dependencias faltantes (ffmpeg, bubblewrap, libxcb-cursor0) automaticamente.
 
 ### Windows
 
@@ -31,7 +31,7 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 
 Usa `winget` para dependencias como ffmpeg y crea `start.bat` para iniciar con doble clic.
 
-### Que hace el instalador (10 pasos)
+### Que hace el instalador (11 pasos)
 
 1. Verifica Python 3.12+, ffmpeg y bubblewrap (sandbox de seguridad)
 2. Verifica Claude Code CLI instalado y autenticado
@@ -40,9 +40,10 @@ Usa `winget` para dependencias como ffmpeg y crea `start.bat` para iniciar con d
 5. Crea entorno virtual de Python
 6. Instala dependencias
 7. Configura modelo de reconocimiento de voz (faster-whisper) con opcion de descarga inmediata
-8. Configura zona horaria
-9. Configura seguridad: PIN opcional y clave de cifrado para la base de datos
-10. Crea directorios de datos y ofrece inicio automatico (systemd en Linux, launchd en macOS, Task Scheduler en Windows)
+8. Configura mascota de escritorio (5 opciones: perro, gato, robot, zorro, buho) — instala PyQt6 y libxcb-cursor0 automaticamente
+9. Configura zona horaria
+10. Configura seguridad: PIN opcional y clave de cifrado para la base de datos
+11. Crea directorios de datos y ofrece inicio automatico (systemd en Linux, launchd en macOS, Task Scheduler en Windows)
 
 El instalador es idempotente. Si ya existe un `.env`, ofrece reconfigurarlo con backup automatico.
 
@@ -67,6 +68,50 @@ Doble clic en `start.bat` o desde PowerShell:
 ```
 
 `start.bat` hace `git pull` automatico al arrancar.
+
+---
+
+## Mascota de escritorio
+
+Si activaste la mascota durante la instalacion (o agregaste `PET_ENABLED=true` al `.env`), aparece automaticamente al arrancar el asistente.
+
+### Comportamiento
+
+| Estado del agente | Que hace la mascota |
+|---|---|
+| Esperando | Camina libremente por todos los monitores y workspaces |
+| Procesando tu mensaje | Se sienta y teclea en un teclado, quieta |
+| Ejecutando tarea compleja | Corre por todos los monitores |
+| Error | Se sienta triste, no se mueve |
+| 5 min sin actividad | Se duerme, no se mueve |
+
+### Interaccion
+
+- **Clic derecho**: menu para cambiar mascota o ver animaciones
+- **Arrastrar**: moverla con clic izquierdo mantenido
+- **Doble clic**: hace una animacion feliz
+
+### Sprites personalizados
+
+Los sprites estan en `src/pet/assets/{animal}/`. Cada archivo es un sprite sheet horizontal (N frames de 96x96 unidos lado a lado). Formatos:
+
+- `{animacion}_side.png` — vista de perfil
+- `{animacion}_front.png` — mirando al usuario
+- `{animacion}_back.png` — de espaldas
+- `{animacion}_front_side.png` — 3/4 vista diagonal hacia el usuario
+- `{animacion}_back_side.png` — 3/4 vista diagonal alejandose
+- `{animacion}.png` — fallback si no existen las vistas direccionales
+
+Para usar sprites propios: reemplaza los PNG y reinicia el asistente. El sistema detecta automaticamente cuantos frames tiene cada sprite sheet.
+
+### Configuracion
+
+```env
+PET_ENABLED=true    # Activar mascota
+PET_TYPE=dog        # dog, cat, robot, fox, owl
+PET_SIZE=96         # Tamano del sprite base en pixeles
+PET_MONITOR=0       # Monitor donde aparece (0 = primario)
+```
 
 ---
 
@@ -151,7 +196,6 @@ APRENDIZAJE
 SISTEMA
   !cmd [comando]   -- ejecutar en terminal (sandbox)
   !screenshot      -- captura de pantalla
-  !logs            -- ultimos comandos ejecutados
 ```
 
 ---
@@ -181,6 +225,19 @@ SISTEMA
 
 ---
 
+## Auto-aprendizaje
+
+El asistente mejora con cada interaccion:
+
+1. **Clasificacion de tareas**: cada mensaje se clasifica automaticamente en 7 tipos (email, desktop, code, search, file, command, general)
+2. **Registro de ejecuciones**: cada interaccion se registra con tipo, duracion, metodo usado, exito/fallo
+3. **Patrones de exito**: acumula los mejores metodos por tipo de tarea y los aplica automaticamente
+4. **Errores memorizados**: registra errores y sus soluciones para no repetirlos
+5. **Deduplicacion**: si extrae un hecho que ya existe, refuerza el existente en vez de duplicar
+6. **Contexto enriquecido**: el prompt incluye automaticamente historial de ejecuciones similares, estadisticas de exito, y errores conocidos a evitar
+
+---
+
 ## Auto-evolucion
 
 - Hot-reload: detecta cambios en su propio codigo y recarga modulos en caliente
@@ -197,10 +254,13 @@ SISTEMA
 
 | Tipo | Persistencia | Descripcion |
 |------|-------------|-------------|
-| Hechos permanentes | Indefinida | Guardados con `!recuerda` |
+| Hechos permanentes | Indefinida | Guardados automaticamente o con `!recuerda` |
 | Procedimientos | Indefinida | Lecciones de errores, no se repiten |
+| Ejecuciones | Indefinida | Registro completo de cada tarea ejecutada |
+| Patrones de tareas | Indefinida | Mejores metodos acumulados por tipo |
+| Errores y soluciones | Indefinida | Errores con su resolucion documentada |
 | Resumenes de sesion | Indefinida | Resumen automatico al cerrar sesion |
-| Historial cruzado | 7 dias | Contexto de sesiones anteriores |
+| Historial cruzado | 365 dias | Contexto de sesiones anteriores |
 | Base de conocimiento | Indefinida | De busquedas web y URLs |
 
 SQLite local con cifrado AES-256 opcional (SQLCipher via APSW). Indices FTS5.
@@ -260,6 +320,13 @@ claude
 3. Revisar logs: `tail -f logs/app.log`
 4. Confirmar que enviaste `/start` al bot
 
+### "La mascota no aparece"
+
+1. Verificar `PET_ENABLED=true` en `.env`
+2. Verificar PyQt6: `python -c "from PyQt6.QtWidgets import QApplication"`
+3. Linux: instalar `libxcb-cursor0` (`sudo apt install libxcb-cursor0`)
+4. Verificar logs para errores del pet: `grep pet logs/app.log`
+
 ### "Error de base de datos"
 
 ```bash
@@ -273,16 +340,6 @@ python -m src.main
 ```bash
 source .venv/bin/activate
 python -c "from faster_whisper import WhisperModel; WhisperModel('small')"
-```
-
-### "El bridge de WhatsApp no conecta"
-
-```bash
-curl http://127.0.0.1:3001/health
-# Si dice "disconnected":
-cd whatsapp-bridge
-rm -rf auth_info/
-npm start
 ```
 
 ### Permisos en Linux/macOS

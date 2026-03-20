@@ -173,6 +173,43 @@ CREATE TABLE IF NOT EXISTS security_audit (
     sender_id TEXT,
     severity TEXT CHECK(severity IN ('info', 'warning', 'critical'))
 );
+
+CREATE TABLE IF NOT EXISTS execution_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT DEFAULT (datetime('now')),
+    task_type TEXT NOT NULL,
+    task_summary TEXT NOT NULL,
+    method_used TEXT,
+    success INTEGER DEFAULT 1,
+    duration_secs REAL,
+    error_message TEXT,
+    resolution TEXT,
+    session_id TEXT,
+    message_count INTEGER DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS task_patterns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_type TEXT NOT NULL,
+    pattern_key TEXT NOT NULL,
+    best_method TEXT NOT NULL,
+    avg_duration_secs REAL,
+    success_count INTEGER DEFAULT 1,
+    fail_count INTEGER DEFAULT 0,
+    last_used TEXT DEFAULT (datetime('now')),
+    tips TEXT,
+    UNIQUE(task_type, pattern_key)
+);
+
+CREATE TABLE IF NOT EXISTS error_solutions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    error_pattern TEXT NOT NULL,
+    solution TEXT NOT NULL,
+    context TEXT,
+    occurrences INTEGER DEFAULT 1,
+    last_seen TEXT DEFAULT (datetime('now')),
+    effectiveness REAL DEFAULT 1.0
+);
 """
 
 _INDEXES = """
@@ -192,6 +229,14 @@ CREATE INDEX IF NOT EXISTS idx_security_audit_severity
     ON security_audit(severity, timestamp);
 CREATE INDEX IF NOT EXISTS idx_session_summaries_session
     ON session_summaries(session_id);
+CREATE INDEX IF NOT EXISTS idx_execution_log_task_type
+    ON execution_log(task_type, timestamp);
+CREATE INDEX IF NOT EXISTS idx_execution_log_session
+    ON execution_log(session_id);
+CREATE INDEX IF NOT EXISTS idx_task_patterns_type_key
+    ON task_patterns(task_type, pattern_key);
+CREATE INDEX IF NOT EXISTS idx_error_solutions_pattern
+    ON error_solutions(error_pattern);
 """
 
 

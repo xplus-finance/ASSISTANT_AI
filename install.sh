@@ -2,10 +2,10 @@
 set -e
 
 # ============================================================================
-# Personal AI Assistant — Instalador Interactivo v2.0
+# Personal AI Assistant — Instalador Interactivo v3.0
 # ============================================================================
 # Instalador guiado para Linux/macOS.
-# Configura dependencias, canal de mensajería, audio y seguridad.
+# Configura dependencias, canal de mensajería, audio, mascota y seguridad.
 # Idempotente: seguro de ejecutar múltiples veces.
 # ============================================================================
 
@@ -40,7 +40,7 @@ step_header() {
     local step_title="$2"
     echo ""
     echo -e "  ${CYAN}${BOLD}═══════════════════════════════════════════════════════════${NC}"
-    echo -e "  ${CYAN}${BOLD}  PASO ${step_num} de 10 — ${step_title}${NC}"
+    echo -e "  ${CYAN}${BOLD}  PASO ${step_num} de 11 — ${step_title}${NC}"
     echo -e "  ${CYAN}${BOLD}═══════════════════════════════════════════════════════════${NC}"
     echo ""
 }
@@ -100,6 +100,8 @@ read -r
 # PASO 1/10 — Verificación del sistema
 # ============================================================================
 step_header "1" "Verificando tu sistema"
+echo -e "  ${DIM}Revisando que tu computadora tenga todo lo necesario.${NC}"
+echo ""
 
 echo -e "  ${DIM}Vamos a revisar que tu computadora tenga todo lo necesario.${NC}"
 echo -e "  ${DIM}Si falta algo, te ayudamos a instalarlo.${NC}"
@@ -740,11 +742,92 @@ fi
 step_done "7" "Audio configurado"
 
 # ============================================================================
-# PASO 8/10 — Zona horaria
+# PASO 8/11 — Mascota de escritorio
+# ============================================================================
+step_header "8" "Mascota de escritorio (Desktop Pet)"
+
+echo -e "  ${DIM}Tu asistente puede tener una mascota virtual que vive en tu escritorio.${NC}"
+echo -e "  ${DIM}Se mueve, reacciona a lo que hace el agente y te hace compañía.${NC}"
+echo ""
+echo -e "  ┌─────────────────────────────────────────────────────────┐"
+echo -e "  │  ${BOLD}Mascotas disponibles:${NC}                                   │"
+echo -e "  │                                                         │"
+echo -e "  │  ${GREEN}1)${NC} 🐕 ${BOLD}Perro${NC}   — Fiel, mueve la cola, se duerme              │"
+echo -e "  │  ${GREEN}2)${NC} 🐱 ${BOLD}Gato${NC}    — Elegante, bigotes, se acurruca               │"
+echo -e "  │  ${GREEN}3)${NC} 🤖 ${BOLD}Robot${NC}   — Luces, antena, jets al correr                │"
+echo -e "  │  ${GREEN}4)${NC} 🦊 ${BOLD}Zorro${NC}   — Astuto, cola frondosa                        │"
+echo -e "  │  ${GREEN}5)${NC} 🦉 ${BOLD}Búho${NC}    — Sabio, gira la cabeza, vuela                 │"
+echo -e "  │  ${GREEN}6)${NC} ❌ ${BOLD}No quiero mascota${NC}                                      │"
+echo -e "  │                                                         │"
+echo -e "  └─────────────────────────────────────────────────────────┘"
+echo ""
+ask "Tu elección [${BOLD}6${NC}]: "
+read -r PET_CHOICE
+PET_CHOICE="${PET_CHOICE:-6}"
+
+if [[ "$PET_CHOICE" != "6" ]]; then
+    case "$PET_CHOICE" in
+        1) PET_TYPE="dog" ;;
+        2) PET_TYPE="cat" ;;
+        3) PET_TYPE="robot" ;;
+        4) PET_TYPE="fox" ;;
+        5) PET_TYPE="owl" ;;
+        *) PET_TYPE="dog"; warn "Opción no reconocida, usando perro." ;;
+    esac
+
+    # Instalar dependencia de sistema para Qt xcb plugin
+    working "Instalando dependencias del sistema para la mascota..."
+    if command -v apt &>/dev/null; then
+        sudo apt install -y -qq libxcb-cursor0 > /dev/null 2>&1
+    elif command -v dnf &>/dev/null; then
+        sudo dnf install -y -q xcb-util-cursor > /dev/null 2>&1
+    elif command -v pacman &>/dev/null; then
+        sudo pacman -S --noconfirm --needed xcb-util-cursor > /dev/null 2>&1
+    fi
+
+    working "Instalando PyQt6 (interfaz gráfica para la mascota)..."
+    source "$PROJECT_DIR/.venv/bin/activate"
+    pip install PyQt6 --quiet 2>&1 | tail -2
+    if $PYTHON_CMD -c "from PyQt6.QtWidgets import QApplication" 2>/dev/null; then
+        info "PyQt6 y dependencias instalados correctamente."
+    else
+        warn "PyQt6 no se pudo instalar. La mascota no estará disponible."
+        PET_TYPE=""
+    fi
+
+    if [[ -n "$PET_TYPE" ]]; then
+        if [[ -f "$ENV_FILE" ]]; then
+            if grep -q "^PET_ENABLED=" "$ENV_FILE"; then
+                _sed_i "s|^PET_ENABLED=.*|PET_ENABLED=true|" "$ENV_FILE"
+                _sed_i "s|^PET_TYPE=.*|PET_TYPE=$PET_TYPE|" "$ENV_FILE"
+            else
+                {
+                    echo ""
+                    echo "# --- Mascota de Escritorio ---"
+                    echo "PET_ENABLED=true"
+                    echo "PET_TYPE=$PET_TYPE"
+                    echo "PET_SIZE=96"
+                    echo "PET_MONITOR=0"
+                } >> "$ENV_FILE"
+            fi
+        fi
+        PET_NAMES=( [dog]="Perro" [cat]="Gato" [robot]="Robot" [fox]="Zorro" [owl]="Búho" )
+        info "Mascota activada: ${BOLD}${PET_NAMES[$PET_TYPE]:-$PET_TYPE}${NC}"
+        echo -e "  ${DIM}La mascota aparecerá en tu escritorio cuando arranques el asistente.${NC}"
+        echo -e "  ${DIM}Cambia de mascota con clic derecho → Cambiar mascota.${NC}"
+    fi
+else
+    info "Mascota omitida. Puedes activarla después en .env (PET_ENABLED=true)"
+fi
+
+step_done "8" "Mascota configurada"
+
+# ============================================================================
+# PASO 9/11 — Zona horaria
 # ============================================================================
 if [[ "${SKIP_ENV:-}" != "true" ]]; then
 
-step_header "8" "Zona horaria"
+step_header "9" "Zona horaria"
 
 echo -e "  ${DIM}Tu asistente necesita saber tu zona horaria para${NC}"
 echo -e "  ${DIM}recordatorios y tareas programadas.${NC}"
@@ -797,12 +880,12 @@ esac
 _sed_i "s|^TIMEZONE=.*|TIMEZONE=$TZ_INPUT|" "$ENV_FILE"
 info "Zona horaria: ${BOLD}$TZ_INPUT${NC}"
 
-step_done "8" "Zona horaria configurada"
+step_done "9" "Zona horaria configurada"
 
 # ============================================================================
-# PASO 9/10 — Seguridad
+# PASO 10/11 — Seguridad
 # ============================================================================
-step_header "9" "Seguridad"
+step_header "10" "Seguridad"
 
 echo -e "  ${DIM}Puedes proteger tu asistente con un PIN de seguridad.${NC}"
 echo -e "  ${DIM}Si lo activas, te pedirá el PIN antes de ejecutar${NC}"
@@ -844,19 +927,19 @@ echo -e "  ${DIM}Se guardó en el archivo .env (no la compartas con nadie).${NC}
 
 info "Archivo .env configurado correctamente."
 
-step_done "9" "Seguridad configurada"
+step_done "10" "Seguridad configurada"
 
 else
-    # Si saltamos la config de .env, marcamos pasos 8-9 como omitidos
+    # Si saltamos la config de .env, marcamos pasos 9-10 como omitidos
     echo ""
-    info "Pasos 8-9 omitidos (usando configuración existente)."
+    info "Pasos 9-10 omitidos (usando configuración existente)."
     echo ""
 fi # end SKIP_ENV for timezone/security
 
 # ============================================================================
-# PASO 10/10 — Configuración final
+# PASO 11/11 — Configuración final
 # ============================================================================
-step_header "10" "Configuración final"
+step_header "11" "Configuración final"
 
 # --- Crear directorios ---
 working "Creando estructura de directorios..."
@@ -954,7 +1037,7 @@ else
     info "Inicio automático omitido. Puedes configurarlo después."
 fi
 
-step_done "10" "Configuración final lista"
+step_done "11" "Configuración final lista"
 
 # ============================================================================
 # PANTALLA FINAL DE ÉXITO
@@ -1016,6 +1099,9 @@ if command -v claude &>/dev/null; then
     echo -e "    ✅ Claude Code: instalado"
 fi
 echo -e "    ✅ Modelo de voz: ${WHISPER_MODEL:-small}"
+if [[ "${PET_TYPE:-}" != "" ]]; then
+    echo -e "    ✅ Mascota: ${PET_TYPE} (Desktop Pet activo)"
+fi
 if [[ -n "${TZ_INPUT:-}" ]]; then
     echo -e "    ✅ Zona horaria: $TZ_INPUT"
 fi

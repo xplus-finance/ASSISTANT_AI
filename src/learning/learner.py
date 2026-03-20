@@ -151,23 +151,16 @@ class Learner:
             if not fact_text:
                 continue
 
-            valid_categories = {"user", "project", "preference", "technical", "world"}
+            valid_categories = {"user", "project", "preference", "technical", "world", "procedure"}
             if category not in valid_categories:
-                category = "user"
+                category = "technical"
 
             confidence = max(0.0, min(1.0, confidence))
 
             try:
-                from src.memory.engine import MemoryEngine
-
-                # Access the engine through the knowledge base
-                self._kb._engine.insert_returning_id(
-                    """
-                    INSERT INTO learned_facts (category, fact, confidence, source)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (category, fact_text, confidence, "conversation"),
-                )
+                from src.memory.learning import LearningStore
+                store = LearningStore(self._kb._engine)
+                store.add_fact_deduplicated(category, fact_text, source="conversation", confidence=confidence)
                 persisted.append(fact)
             except Exception:
                 log.warning("learner.fact_persist_failed", fact=fact_text[:60])

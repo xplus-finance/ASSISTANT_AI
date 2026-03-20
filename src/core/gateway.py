@@ -171,6 +171,7 @@ class Gateway:
         self.approval_gate: Any = None
         self.onboarding: Any = None
         self.learner: Any = None
+        self.pet_bridge: Any = None
         self.channels: dict[str, Any] = {}
         self.scheduler: Any = None
 
@@ -318,6 +319,23 @@ class Gateway:
         except Exception:
             log.info("gateway.hot_reload_not_available", exc_info=True)
 
+        # Desktop pet
+        pet_enabled = getattr(cfg, "pet_enabled", "false")
+        if str(pet_enabled).lower() in ("true", "1", "yes"):
+            try:
+                from src.pet.bridge import PetBridge
+                pet_type = getattr(cfg, "pet_type", "dog")
+                pet_size = int(getattr(cfg, "pet_size", 96))
+                pet_monitor = int(getattr(cfg, "pet_monitor", 0))
+                self.pet_bridge = PetBridge(
+                    pet_type=pet_type,
+                    size=pet_size,
+                    monitor=pet_monitor,
+                )
+                self.pet_bridge.start()
+            except Exception:
+                log.info("gateway.pet_not_available", exc_info=True)
+
         try:
             from src.channels.telegram import TelegramChannel
             tg = TelegramChannel(token=cfg.telegram_bot_token)
@@ -348,6 +366,12 @@ class Gateway:
         if self.scheduler:
             try:
                 self.scheduler.shutdown(wait=False)
+            except Exception:
+                pass
+
+        if self.pet_bridge:
+            try:
+                self.pet_bridge.stop()
             except Exception:
                 pass
 
@@ -491,6 +515,10 @@ class Gateway:
 
         await self._send_typing(channel_name, chat_id)
 
+        # Notify pet: processing started
+        if self.pet_bridge:
+            self.pet_bridge.on_message_received()
+
         # Snapshot existing screenshot files BEFORE Claude runs,
         # so we can detect any new ones created during the task.
         screenshots_before = _snapshot_screenshot_files()
@@ -575,6 +603,14 @@ class Gateway:
             except Exception:
                 log.exception("gateway.image_send_failed", path=img_path)
 
+        # Notify pet: response sent
+        if self.pet_bridge:
+            is_error = response_text and any(
+                ind in response_text.lower()
+                for ind in ["no pude", "error", "falló", "problema"]
+            )
+            self.pet_bridge.on_response_sent(success=not is_error)
+
         try:
             self.conversations.add_message(
                 role="user", message=text,
@@ -597,12 +633,16 @@ class Gateway:
         if self.claude is None:
             return "Perdona, no puedo responder en este momento. Intenta de nuevo en unos minutos."
 
+        task_type = self._classify_task(user_text)
+        start_time = time.time()
+
         system_prompt = ""
         if self.context_builder:
             try:
                 ctx = self.context_builder.build(
                     session_id=self.current_session_id,
                     current_message=user_text,
+                    task_type=task_type,
                 )
                 system_prompt = self._build_system_prompt(ctx)
             except Exception:
@@ -610,17 +650,152 @@ class Gateway:
 
         is_complex = any(kw in user_text.lower() for kw in _COMPLEX_KEYWORDS)
 
+        # Notify pet: executing (running) for complex tasks, stay typing for simple ones
+        if self.pet_bridge and is_complex:
+            self.pet_bridge.on_execution_start()
+
+        response_text = ""
+        success = True
+        error_msg = None
+
         try:
-            return await self.claude.ask(
+            response_text = await self.claude.ask(
                 prompt=user_text,
                 system_prompt=system_prompt,
                 complex_task=is_complex,
             )
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
             log.exception("gateway.claude_failed")
-            return "Perdona, tuve un problema procesando tu solicitud. Dame un momento e intenta de nuevo."
+            success = False
+            error_msg = str(exc)[:200]
+            response_text = "Perdona, tuve un problema procesando tu solicitud. Dame un momento e intenta de nuevo."
+
+        duration = time.time() - start_time
+
+        # Detect failure indicators in response
+        if response_text and not error_msg:
+            _fail_indicators = ["no pude", "no logré", "falló", "error:", "failed",
+                                "tuve un problema", "no fue posible"]
+            if any(ind in response_text.lower() for ind in _fail_indicators):
+                success = False
+                error_msg = response_text[:200]
+
+        # Log execution for auto-learning
+        self._log_execution(task_type, user_text, response_text, duration, success, error_msg)
+
+        return response_text
+
+    @staticmethod
+    def _classify_task(text: str) -> str:
+        """Classify user message into a task type for pattern learning."""
+        lower = text.lower()
+        _type_keywords: dict[str, list[str]] = {
+            "email": ["correo", "email", "gmail", "mail", "enviar correo", "envía un correo",
+                       "compose", "inbox", "outlook"],
+            "desktop": ["screenshot", "captura", "pantalla", "click", "clic", "ventana",
+                         "navegador", "browser", "pestaña", "tab", "mouse", "xdotool",
+                         "monitor", "firefox", "chrome"],
+            "code": ["código", "code", "script", "programar", "función", "function",
+                      "clase", "class", "bug", "debug", "compilar", "refactor"],
+            "search": ["busca", "investiga", "research", "web", "google", "internet",
+                        "averigua", "qué es", "what is", "información sobre"],
+            "file": ["archivo", "file", "crear archivo", "leer archivo", "carpeta",
+                      "directorio", "directory", "folder", "documento"],
+            "command": ["ejecuta", "run", "terminal", "instala", "install", "comando",
+                         "command", "apt", "pip", "npm", "sudo", "systemctl"],
+        }
+        for task_type, keywords in _type_keywords.items():
+            if any(kw in lower for kw in keywords):
+                return task_type
+        return "general"
+
+    def _log_execution(
+        self, task_type: str, user_text: str, response: str,
+        duration: float, success: bool, error_msg: str | None = None,
+    ) -> None:
+        """Log execution and update task patterns for auto-learning."""
+        if not self.learning_store:
+            return
+        try:
+            summary = user_text[:500]
+            method = self._extract_method(response) if response else None
+
+            self.learning_store.log_execution(
+                task_type=task_type,
+                task_summary=summary,
+                method_used=method,
+                success=success,
+                duration_secs=round(duration, 1),
+                error_message=error_msg,
+                session_id=self.current_session_id,
+            )
+
+            # Update task patterns
+            pattern_key = self._normalize_pattern_key(user_text)
+            self.learning_store.upsert_task_pattern(
+                task_type=task_type,
+                pattern_key=pattern_key,
+                method=method or "default",
+                duration_secs=round(duration, 1),
+                success=success,
+            )
+
+            # If it failed, log the error pattern
+            if not success and error_msg:
+                error_key = self._normalize_error_key(error_msg)
+                if error_key:
+                    self.learning_store.log_error_solution(
+                        error_pattern=error_key,
+                        solution="pendiente",
+                        context=task_type,
+                    )
+
+            log.debug("gateway.execution_tracked", task_type=task_type,
+                       success=success, duration=round(duration, 1))
+        except Exception:
+            log.warning("gateway.execution_tracking_failed", exc_info=True)
+
+    @staticmethod
+    def _extract_method(response: str) -> str | None:
+        """Extract the method/approach used from Claude's response."""
+        lower = response.lower()[:1000]
+        methods = {
+            "keyboard_shortcuts": ["xdotool key", "ctrl+", "atajo", "shortcut"],
+            "mouse_control": ["xdotool click", "mousemove", "mouse"],
+            "cli_command": ["ejecuté", "ejecute", "ran ", "$ ", "sudo "],
+            "web_search": ["busqué", "encontré", "search", "duckduckgo"],
+            "file_operation": ["escribí", "creé", "leí", "archivo"],
+            "api_call": ["curl", "request", "api", "endpoint"],
+            "browser_automation": ["navegador", "browser", "tab", "pestaña"],
+        }
+        for method, keywords in methods.items():
+            if any(kw in lower for kw in keywords):
+                return method
+        return "general"
+
+    @staticmethod
+    def _normalize_pattern_key(text: str) -> str:
+        """Create a normalized key for pattern matching."""
+        import re
+        lower = text.lower().strip()
+        lower = re.sub(r'[^\w\s]', '', lower)
+        words = lower.split()
+        stop_words = {"el", "la", "los", "las", "un", "una", "de", "del", "en",
+                       "a", "que", "por", "para", "con", "me", "te", "se",
+                       "the", "a", "an", "in", "on", "to", "for", "is", "and"}
+        key_words = [w for w in words if w not in stop_words and len(w) > 2]
+        return " ".join(key_words[:6])
+
+    @staticmethod
+    def _normalize_error_key(error_msg: str) -> str:
+        """Normalize an error message into a reusable pattern key."""
+        import re
+        cleaned = re.sub(r'[\d]+', 'N', error_msg[:150])
+        cleaned = re.sub(r'/[\w/.]+', '<path>', cleaned)
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+        return cleaned[:100] if cleaned else ""
 
     def _detect_environment(self) -> str:
         """Detect the current system environment dynamically (cached 60s)."""
@@ -749,6 +924,50 @@ class Gateway:
         if hasattr(ctx, 'procedures') and ctx.procedures:
             proc_text = "\n".join(f"- {p['fact']}" for p in ctx.procedures)
             parts.append(f"PROCEDIMIENTOS APRENDIDOS (usa estos, NO repitas errores):\n{proc_text}")
+
+        # --- AUTO-LEARNING CONTEXT ---
+        if hasattr(ctx, 'execution_history') and ctx.execution_history:
+            exec_lines = []
+            for ex in ctx.execution_history[:5]:
+                status = "OK" if ex.get("success") else "FALLO"
+                dur = f"{ex.get('duration_secs', '?')}s"
+                method = ex.get("method_used", "?")
+                summary = ex.get("task_summary", "")[:80]
+                line = f"- [{ex.get('task_type', '?')}] {summary}: método={method}, {dur}, {status}"
+                if not ex.get("success") and ex.get("error_message"):
+                    line += f" → error: {ex['error_message'][:60]}"
+                if ex.get("resolution"):
+                    line += f" → fix: {ex['resolution'][:60]}"
+                exec_lines.append(line)
+            if exec_lines:
+                parts.append("HISTORIAL DE EJECUCIONES SIMILARES (aprende de esto):\n" + "\n".join(exec_lines))
+
+        if hasattr(ctx, 'execution_stats') and ctx.execution_stats and ctx.execution_stats.get("total", 0) > 0:
+            stats = ctx.execution_stats
+            parts.append(
+                f"ESTADÍSTICAS PARA ESTE TIPO DE TAREA: "
+                f"{stats['total']} ejecuciones, {stats['success_rate']:.0f}% éxito, "
+                f"duración promedio: {stats['avg_duration']}s"
+            )
+
+        if hasattr(ctx, 'task_patterns') and ctx.task_patterns:
+            pat_lines = []
+            for p in ctx.task_patterns:
+                total = p.get("success_count", 0) + p.get("fail_count", 0)
+                rate = (p["success_count"] / total * 100) if total else 0
+                line = f"- {p.get('pattern_key', '?')} → método: {p.get('best_method', '?')} (éxito: {rate:.0f}%, promedio: {p.get('avg_duration_secs', '?')}s)"
+                if p.get("tips"):
+                    line += f"\n  Tips: {p['tips'][:150]}"
+                pat_lines.append(line)
+            if pat_lines:
+                parts.append("MEJORES MÉTODOS APRENDIDOS (USAR ESTOS):\n" + "\n".join(pat_lines))
+
+        if hasattr(ctx, 'error_patterns') and ctx.error_patterns:
+            err_lines = []
+            for e in ctx.error_patterns[:5]:
+                err_lines.append(f"- \"{e.get('error_pattern', '?')}\": solución → {e.get('solution', '?')}")
+            if err_lines:
+                parts.append("ERRORES CONOCIDOS (EVITAR, ya pasaron antes):\n" + "\n".join(err_lines))
 
         # === SYSTEM PROMPT ===
         parts.append(

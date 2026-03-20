@@ -8,7 +8,7 @@ from typing import Any
 import structlog
 
 from src.memory.conversation import ConversationStore
-from src.memory.engine import MemoryEngine
+from src.memory.engine import MemoryEngine, sanitize_fts_query
 from src.memory.learning import LearningStore
 from src.memory.tasks import TaskManager
 
@@ -27,6 +27,10 @@ class ConversationContext:
     session_id: str
     current_message: str
     procedures: list[dict[str, Any]] = field(default_factory=list)
+    execution_history: list[dict[str, Any]] = field(default_factory=list)
+    error_patterns: list[dict[str, Any]] = field(default_factory=list)
+    task_patterns: list[dict[str, Any]] = field(default_factory=list)
+    execution_stats: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -41,7 +45,7 @@ class ContextBuilder:
     def invalidate_profile_cache(self) -> None:
         self._profile_cache = None
 
-    def build(self, current_message: str, session_id: str) -> ConversationContext:
+    def build(self, current_message: str, session_id: str, task_type: str | None = None) -> ConversationContext:
         profile = self._load_user_profile()
 
         # Get recent from current session
@@ -58,6 +62,32 @@ class ContextBuilder:
         pending = self._tasks.get_pending()
         projects = self._load_active_projects()
         last_summary = self._load_last_session_summary(session_id)
+
+        # Auto-learning context
+        execution_history: list[dict[str, Any]] = []
+        error_patterns: list[dict[str, Any]] = []
+        best_patterns: list[dict[str, Any]] = []
+        exec_stats: dict[str, Any] = {}
+
+        if task_type:
+            try:
+                execution_history = self._learning.get_similar_executions(task_type, limit=5)
+            except Exception:
+                pass
+            try:
+                best_patterns = self._learning.get_best_patterns(task_type, limit=3)
+            except Exception:
+                pass
+            try:
+                exec_stats = self._learning.get_execution_stats(task_type)
+            except Exception:
+                pass
+
+        try:
+            error_patterns = self._learning.get_known_errors(limit=5)
+        except Exception:
+            pass
+
         ctx = ConversationContext(
             user_profile=profile, recent_messages=recent,
             relevant_facts=relevant_facts, relevant_knowledge=relevant_knowledge,
@@ -65,8 +95,14 @@ class ContextBuilder:
             last_session_summary=last_summary, session_id=session_id,
             current_message=current_message,
             procedures=procedures,
+            execution_history=execution_history,
+            error_patterns=error_patterns,
+            task_patterns=best_patterns,
+            execution_stats=exec_stats,
         )
-        log.debug("context.built", session_id=session_id, recent_count=len(recent), facts_count=len(relevant_facts))
+        log.debug("context.built", session_id=session_id, recent_count=len(recent),
+                   facts_count=len(relevant_facts), procedures_count=len(procedures),
+                   exec_history=len(execution_history))
         return ctx
 
     def _load_user_profile(self) -> dict[str, str]:
@@ -99,8 +135,24 @@ class ContextBuilder:
             return []
 
     def _search_procedures(self, message: str, limit: int = 5) -> list[dict[str, Any]]:
+        """Search procedures by relevance to message, falling back to most recent."""
         try:
-            sql = "SELECT fact FROM learned_facts WHERE category = 'procedure' ORDER BY last_used DESC, id DESC LIMIT ?"
+            stripped = message.strip()
+            if len(stripped) >= 3:
+                safe_query = sanitize_fts_query(stripped)
+                if safe_query:
+                    results = self._engine.fetchall_dicts(
+                        "SELECT f.id, f.fact, f.confidence, f.use_count "
+                        "FROM facts_fts fts JOIN learned_facts f ON f.id = fts.rowid "
+                        "WHERE facts_fts MATCH ? AND f.category = 'procedure' "
+                        "ORDER BY rank LIMIT ?",
+                        (safe_query, limit),
+                    )
+                    if results:
+                        return results
+
+            # Fallback: most recent/used procedures
+            sql = "SELECT id, fact, confidence, use_count FROM learned_facts WHERE category = 'procedure' ORDER BY use_count DESC, id DESC LIMIT ?"
             return self._engine.fetchall_dicts(sql, (limit,))
         except Exception:
             return []
@@ -114,7 +166,7 @@ class ContextBuilder:
             SELECT id, timestamp, role, message, message_type, audio_duration_secs, channel
             FROM conversations
             WHERE session_id != ?
-              AND timestamp >= datetime('now', '-7 days')
+              AND timestamp >= datetime('now', '-365 days')
             ORDER BY id DESC
             LIMIT ?
         """

@@ -1,5 +1,5 @@
 # ============================================================================
-# Personal AI Assistant — Instalador Interactivo v2.0 (Windows)
+# Personal AI Assistant — Instalador Interactivo v3.0 (Windows)
 # ============================================================================
 # Ejecutar: powershell -ExecutionPolicy Bypass -File install.ps1
 # ============================================================================
@@ -16,7 +16,7 @@ function Write-Work($msg)  { Write-Host "  [..] $msg" -ForegroundColor Cyan }
 function Write-Header($n, $t) {
     Write-Host ""
     Write-Host "  ==========================================================" -ForegroundColor Cyan
-    Write-Host "  PASO $n de 10 -- $t" -ForegroundColor Cyan
+    Write-Host "  PASO $n de 11 -- $t" -ForegroundColor Cyan
     Write-Host "  ==========================================================" -ForegroundColor Cyan
     Write-Host ""
 }
@@ -456,11 +456,59 @@ if (Ask-Confirm "Descargar el modelo ahora? (se descargara automaticamente al pr
 }
 
 # ============================================================================
-# PASOS 8-9 — Zona horaria y Seguridad (solo si no hay .env previo)
+# PASO 8/11 — Mascota de escritorio
+# ============================================================================
+Write-Header "8" "Mascota de escritorio (Desktop Pet)"
+
+Write-Host "  Tu asistente puede tener una mascota virtual en tu escritorio." -ForegroundColor DarkGray
+Write-Host "  Se mueve, reacciona a lo que hace el agente y te hace compania." -ForegroundColor DarkGray
+Write-Host ""
+Write-Host "  1) Perro   - Fiel, mueve la cola, se duerme" -ForegroundColor Green
+Write-Host "  2) Gato    - Elegante, bigotes, se acurruca" -ForegroundColor Green
+Write-Host "  3) Robot   - Luces, antena, jets al correr" -ForegroundColor Green
+Write-Host "  4) Zorro   - Astuto, cola frondosa" -ForegroundColor Green
+Write-Host "  5) Buho    - Sabio, gira la cabeza, vuela" -ForegroundColor Green
+Write-Host "  6) No quiero mascota" -ForegroundColor DarkGray
+Write-Host ""
+$petChoice = Ask-Input "Tu eleccion" "6"
+
+$petType = ""
+if ($petChoice -ne "6") {
+    $petType = switch ($petChoice) {
+        "1" { "dog" }; "2" { "cat" }; "3" { "robot" }; "4" { "fox" }; "5" { "owl" }; default { "dog" }
+    }
+
+    Write-Work "Instalando PyQt6 (interfaz grafica para la mascota)..."
+    & $PipVenv install PyQt6 --quiet 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Step "PyQt6 instalado correctamente."
+    } else {
+        Write-Warn "PyQt6 no se pudo instalar."
+        Write-Host "  Si ves un error de DLL, instala Visual C++ Redistributable:" -ForegroundColor DarkGray
+        Write-Host "  https://aka.ms/vs/17/release/vc_redist.x64.exe" -ForegroundColor Cyan
+        $petType = ""
+    }
+
+    if ($petType) {
+        Update-EnvVar "PET_ENABLED" "true"
+        Update-EnvVar "PET_TYPE" $petType
+        Update-EnvVar "PET_SIZE" "96"
+        Update-EnvVar "PET_MONITOR" "0"
+        $petNames = @{ dog = "Perro"; cat = "Gato"; robot = "Robot"; fox = "Zorro"; owl = "Buho" }
+        Write-Step "Mascota activada: $($petNames[$petType])"
+        Write-Host "  La mascota aparecera en tu escritorio cuando arranques el asistente." -ForegroundColor DarkGray
+        Write-Host "  Clic derecho sobre ella para cambiar de mascota." -ForegroundColor DarkGray
+    }
+} else {
+    Write-Step "Mascota omitida. Puedes activarla despues en .env (PET_ENABLED=true)"
+}
+
+# ============================================================================
+# PASOS 9-10 — Zona horaria y Seguridad (solo si no hay .env previo)
 # ============================================================================
 if (-not $skipEnv) {
 
-    Write-Header "8" "Zona horaria"
+    Write-Header "9" "Zona horaria"
 
     Write-Host "  Tu asistente necesita saber tu zona horaria para" -ForegroundColor DarkGray
     Write-Host "  recordatorios y tareas programadas." -ForegroundColor DarkGray
@@ -493,7 +541,7 @@ if (-not $skipEnv) {
     Update-EnvVar "TIMEZONE" $timezone
     Write-Step "Zona horaria: $timezone"
 
-    Write-Header "9" "Seguridad"
+    Write-Header "10" "Seguridad"
 
     Write-Host "  Puedes proteger el asistente con un PIN de seguridad (4-8 digitos)." -ForegroundColor DarkGray
     Write-Host "  Se pedira para operaciones sensibles (borrar datos, cambiar config)." -ForegroundColor DarkGray
@@ -519,9 +567,9 @@ if (-not $skipEnv) {
 } # end -not skipEnv (timezone/security)
 
 # ============================================================================
-# PASO 10/10 — Configuracion final
+# PASO 11/11 — Configuracion final
 # ============================================================================
-Write-Header "10" "Configuracion final"
+Write-Header "11" "Configuracion final"
 
 # Crear directorios
 foreach ($dir in @("data", "logs", "skills", "models", "mcps",
@@ -635,6 +683,10 @@ Write-Host "  Resumen de lo instalado:" -ForegroundColor White
 Write-Host "    Python: $(& $pythonCmd --version 2>&1)" -ForegroundColor DarkGray
 Write-Host "    Entorno virtual: .venv/" -ForegroundColor DarkGray
 Write-Host "    Modelo Whisper: $whisperModel" -ForegroundColor DarkGray
+if ($petType) {
+    $petDisplay = @{ dog = "Perro"; cat = "Gato"; robot = "Robot"; fox = "Zorro"; owl = "Buho" }
+    Write-Host "    Mascota: $($petDisplay[$petType]) (Desktop Pet activo)" -ForegroundColor DarkGray
+}
 if (-not $skipEnv) {
     Write-Host "    Zona horaria: $timezone" -ForegroundColor DarkGray
 }
