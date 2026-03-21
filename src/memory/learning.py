@@ -228,6 +228,34 @@ class LearningStore:
                 (error_pattern, solution, context, now),
             )
 
+    def close_error_solution(self, error_pattern: str, actual_solution: str) -> None:
+        """Close the cycle: update a pending error with the real solution that worked."""
+        existing = self._engine.fetchone(
+            "SELECT id, times_applied, times_resolved FROM error_solutions WHERE error_pattern = ?",
+            (error_pattern,),
+        )
+        if not existing:
+            return
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        new_resolved = (existing[2] or 0) + 1
+        new_applied = max((existing[1] or 0), new_resolved)
+        effectiveness = new_resolved / new_applied if new_applied > 0 else 0.0
+        self._engine.execute(
+            "UPDATE error_solutions SET solution = ?, times_resolved = ?, "
+            "times_applied = ?, effectiveness = ?, last_seen = ? WHERE id = ?",
+            (actual_solution, new_resolved, new_applied, round(effectiveness, 2), now, existing[0]),
+        )
+        log.debug("learning.error_solution_closed", error_pattern=error_pattern[:60],
+                   effectiveness=effectiveness)
+
+    def track_error_applied(self, error_pattern: str) -> None:
+        """Track that a known solution was applied (regardless of outcome)."""
+        self._engine.execute(
+            "UPDATE error_solutions SET times_applied = COALESCE(times_applied, 0) + 1 "
+            "WHERE error_pattern = ?",
+            (error_pattern,),
+        )
+
     def get_known_errors(self, limit: int = 10) -> list[dict[str, Any]]:
         sql = """
             SELECT error_pattern, solution, context, occurrences, effectiveness
@@ -238,6 +266,21 @@ class LearningStore:
         return self._engine.fetchall_dicts(sql, (limit,))
 
     def search_error_solutions(self, error_text: str, limit: int = 3) -> list[dict[str, Any]]:
+        """Search error solutions using FTS5 with LIKE fallback."""
+        safe_query = sanitize_fts_query(error_text[:150])
+        if safe_query:
+            try:
+                results = self._engine.fetchall_dicts(
+                    "SELECT es.error_pattern, es.solution, es.context, es.occurrences, es.effectiveness "
+                    "FROM error_solutions_fts fts JOIN error_solutions es ON es.id = fts.rowid "
+                    "WHERE error_solutions_fts MATCH ? ORDER BY rank LIMIT ?",
+                    (safe_query, limit),
+                )
+                if results:
+                    return results
+            except Exception:
+                pass  # FTS table might not exist yet on older DBs, fall through to LIKE
+        # Fallback: LIKE search
         sql = """
             SELECT error_pattern, solution, context, occurrences, effectiveness
             FROM error_solutions

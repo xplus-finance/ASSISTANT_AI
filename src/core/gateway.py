@@ -174,6 +174,9 @@ class Gateway:
         self.pet_bridge: Any = None
         self.channels: dict[str, Any] = {}
         self.scheduler: Any = None
+        self.claude_code_sync: Any = None
+        self.heartbeat: Any = None
+        self.llm_bridge: Any = None
 
         self.current_session_id: str = _new_session_id()
         self.last_message_time: float = 0.0
@@ -250,6 +253,31 @@ class Gateway:
         except Exception:
             log.warning("gateway.claude_bridge_init_failed", exc_info=True)
 
+        # Multi-model fallback bridge (OpenAI + Ollama)
+        try:
+            from src.core.llm_bridge import LLMBridge, OpenAIBackend, OllamaBackend
+            self.llm_bridge = LLMBridge()
+
+            openai_key = getattr(cfg, "openai_api_key", "")
+            if openai_key:
+                openai_model = getattr(cfg, "openai_model", "gpt-4o")
+                openai_base = getattr(cfg, "openai_base_url", "") or None
+                self.llm_bridge.add_backend(
+                    OpenAIBackend(api_key=openai_key, model=openai_model, base_url=openai_base)
+                )
+
+            ollama_model = getattr(cfg, "ollama_model", "llama3.2")
+            ollama_url = getattr(cfg, "ollama_base_url", "http://localhost:11434")
+            self.llm_bridge.add_backend(
+                OllamaBackend(model=ollama_model, base_url=ollama_url)
+            )
+
+            # Check which backends are actually available
+            await self.llm_bridge.check_backends()
+            log.info("gateway.llm_bridge_ready", backends=self.llm_bridge.available_backends)
+        except Exception:
+            log.info("gateway.llm_bridge_not_available", exc_info=True)
+
         try:
             from src.memory.context import ContextBuilder
             self.context_builder = ContextBuilder(
@@ -257,6 +285,7 @@ class Gateway:
                 conversation=self.conversations,
                 learning=self.learning_store,
                 tasks=self.tasks,
+                relationships=self.relationships,
             )
         except Exception:
             log.info("gateway.context_builder_not_available", exc_info=True)
@@ -298,6 +327,18 @@ class Gateway:
             log.info("gateway.learning_not_available", exc_info=True)
 
         try:
+            from src.memory.claude_code_sync import ClaudeCodeSync
+            self.claude_code_sync = ClaudeCodeSync(
+                engine=self.memory,
+                learning=self.learning_store,
+            )
+            if self.claude_code_sync.is_available():
+                self.claude_code_sync.import_from_claude_code()
+                log.info("gateway.claude_code_sync_ready")
+        except Exception:
+            log.info("gateway.claude_code_sync_not_available", exc_info=True)
+
+        try:
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
             self.scheduler = AsyncIOScheduler(
                 timezone=getattr(cfg, "timezone", "UTC")
@@ -307,9 +348,112 @@ class Gateway:
                 "interval", minutes=1,
                 id="scheduled_tasks", replace_existing=True,
             )
+            self.scheduler.add_job(
+                self._sync_claude_code_memory,
+                "interval", minutes=30,
+                id="claude_code_sync", replace_existing=True,
+            )
             self.scheduler.start()
         except Exception:
             log.info("gateway.scheduler_not_available", exc_info=True)
+
+        # HeartbeatPro proactive engine
+        try:
+            from src.core.heartbeat import HeartbeatPro, CONFIG_PATH
+            from src.core.notification_manager import NotificationManager
+            from src.core.heartbeat_checks import (
+                create_overdue_tasks_check,
+                create_system_health_check,
+                create_morning_summary_check,
+                create_git_monitor_check,
+                create_web_monitor_check,
+                create_error_pattern_check,
+                create_contextual_reminders_check,
+            )
+
+            import json
+            hb_config: dict = {}
+            try:
+                if CONFIG_PATH.exists():
+                    hb_config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+
+            tz_str = getattr(cfg, "timezone", "America/New_York")
+
+            async def _heartbeat_send(msg: str) -> None:
+                chat_id = str(cfg.authorized_chat_id)
+                for ch in self.channels.values():
+                    try:
+                        await ch.send_text(chat_id, msg)
+                    except Exception:
+                        pass
+
+            # AI reasoning function using LLM bridge
+            ai_reason_fn = None
+            if self.llm_bridge:
+                async def _ai_reason(prompt: str) -> str:
+                    return await self.llm_bridge.ask(prompt)
+                ai_reason_fn = _ai_reason
+
+            # Notification manager
+            notification_mgr = NotificationManager(
+                memory_engine=self.memory,
+                timezone_str=tz_str,
+            )
+
+            self.heartbeat = HeartbeatPro(
+                send_fn=_heartbeat_send,
+                notification_manager=notification_mgr,
+                ai_reason_fn=ai_reason_fn,
+                memory_engine=self.memory,
+            )
+
+            # Register all checks
+            if self.tasks:
+                self.heartbeat.register_check(create_overdue_tasks_check(self.tasks))
+            self.heartbeat.register_check(create_system_health_check(hb_config))
+            if self.tasks and self.learning_store:
+                self.heartbeat.register_check(
+                    create_morning_summary_check(
+                        self.tasks, self.learning_store,
+                        timezone_str=tz_str, config=hb_config,
+                    )
+                )
+            self.heartbeat.register_check(create_git_monitor_check(hb_config))
+            self.heartbeat.register_check(create_web_monitor_check(hb_config))
+            if self.learning_store:
+                self.heartbeat.register_check(
+                    create_error_pattern_check(self.learning_store, hb_config)
+                )
+            if self.tasks and self.memory:
+                self.heartbeat.register_check(
+                    create_contextual_reminders_check(
+                        self.tasks, self.memory,
+                        timezone_str=tz_str, config=hb_config,
+                    )
+                )
+
+            # Digest delivery job via scheduler
+            if self.scheduler:
+                async def _check_digest():
+                    if notification_mgr.is_digest_due():
+                        digest = notification_mgr.build_digest()
+                        if digest:
+                            await _heartbeat_send(digest)
+                            notification_mgr.clear_digest()
+
+                self.scheduler.add_job(
+                    _check_digest,
+                    "interval", minutes=1,
+                    id="heartbeat_digest", replace_existing=True,
+                )
+
+            self.heartbeat.start()
+            log.info("gateway.heartbeat_pro_ready",
+                     checks=len(self.heartbeat.get_checks()))
+        except Exception:
+            log.info("gateway.heartbeat_not_available", exc_info=True)
 
         self.hot_reloader = None
         try:
@@ -362,6 +506,12 @@ class Gateway:
 
         if hasattr(self, '_stop_event'):
             self._stop_event.set()
+
+        if self.heartbeat:
+            try:
+                self.heartbeat.stop()
+            except Exception:
+                pass
 
         if self.scheduler:
             try:
@@ -467,6 +617,19 @@ class Gateway:
             await self._handle_command(text, channel_name, chat_id)
             return
 
+        # --- Natural language skill routing ---
+        if self.skill_registry is not None:
+            skill, nat_match = self.skill_registry.find_skill_natural(text)
+            if skill and nat_match and nat_match.confidence >= 0.55:
+                log.info("gateway.natural_match",
+                         skill=nat_match.skill_name,
+                         intent=nat_match.intent,
+                         confidence=nat_match.confidence)
+                await self._handle_natural_skill(
+                    skill, nat_match, text, channel_name, chat_id,
+                )
+                return
+
         if self.onboarding is not None:
             try:
                 is_complete = await self.onboarding.is_onboarding_complete()
@@ -512,6 +675,13 @@ class Gateway:
                 channel=channel_name,
             )
             return
+
+        # Auto-track relationship sentiment
+        if self.relationships and text:
+            try:
+                self.relationships.auto_track(text)
+            except Exception:
+                pass
 
         await self._send_typing(channel_name, chat_id)
 
@@ -667,10 +837,27 @@ class Gateway:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            log.exception("gateway.claude_failed")
-            success = False
-            error_msg = str(exc)[:200]
-            response_text = "Perdona, tuve un problema procesando tu solicitud. Dame un momento e intenta de nuevo."
+            log.warning("gateway.claude_failed_trying_fallback", error=str(exc)[:100])
+
+            # Try fallback LLM bridge (OpenAI → Ollama)
+            if self.llm_bridge and self.llm_bridge.available_backends:
+                try:
+                    response_text = await self.llm_bridge.ask_fallback(
+                        prompt=user_text,
+                        system_prompt=system_prompt,
+                        timeout=getattr(self._config, "claude_timeout", 120),
+                    )
+                    log.info("gateway.fallback_llm_used",
+                             backends=self.llm_bridge.available_backends)
+                except Exception as fallback_exc:
+                    log.exception("gateway.fallback_llm_also_failed")
+                    success = False
+                    error_msg = f"Claude: {str(exc)[:100]} | Fallback: {str(fallback_exc)[:100]}"
+                    response_text = "Perdona, tuve un problema procesando tu solicitud. Dame un momento e intenta de nuevo."
+            else:
+                success = False
+                error_msg = str(exc)[:200]
+                response_text = "Perdona, tuve un problema procesando tu solicitud. Dame un momento e intenta de nuevo."
 
         duration = time.time() - start_time
 
@@ -751,6 +938,19 @@ class Gateway:
                         solution="pendiente",
                         context=task_type,
                     )
+
+            # Close error cycle: if a previously failing task type now succeeds
+            if success and method:
+                try:
+                    known = self.learning_store.search_error_solutions(pattern_key, limit=1)
+                    for err in known:
+                        if err.get("solution") == "pendiente":
+                            self.learning_store.close_error_solution(
+                                err["error_pattern"],
+                                f"Resuelto con método: {method}",
+                            )
+                except Exception:
+                    pass
 
             log.debug("gateway.execution_tracked", task_type=task_type,
                        success=success, duration=round(duration, 1))
@@ -969,6 +1169,28 @@ class Gateway:
             if err_lines:
                 parts.append("ERRORES CONOCIDOS (EVITAR, ya pasaron antes):\n" + "\n".join(err_lines))
 
+        # --- RELATIONSHIP CONTEXT ---
+        if hasattr(ctx, 'relationship_stage') and ctx.relationship_stage != "stranger":
+            mood_hint = ""
+            if hasattr(ctx, 'recent_mood'):
+                mood_map = {
+                    "frustrated": "El usuario parece frustrado últimamente. Sé extra paciente y preciso.",
+                    "negative": "El usuario ha tenido interacciones negativas recientes. Sé cuidadoso y empático.",
+                    "positive": "El usuario está de buen ánimo. Mantén la energía positiva.",
+                }
+                mood_hint = mood_map.get(ctx.recent_mood, "")
+            stage_hint = {
+                "acquaintance": "Nivel de confianza: conocido. Sé amigable pero profesional.",
+                "familiar": "Nivel de confianza: familiar. Puedes ser más casual y directo.",
+                "trusted": "Nivel de confianza: alta. Comunicación directa y fluida.",
+                "partner": "Nivel de confianza: máxima. Relación consolidada, total confianza mutua.",
+            }.get(ctx.relationship_stage, "")
+            if stage_hint or mood_hint:
+                rel_text = stage_hint
+                if mood_hint:
+                    rel_text = f"{rel_text}\n{mood_hint}" if rel_text else mood_hint
+                parts.append(f"RELACIÓN CON EL USUARIO:\n{rel_text}")
+
         # === SYSTEM PROMPT ===
         parts.append(
             "REGLAS FUNDAMENTALES:\n"
@@ -1138,6 +1360,53 @@ class Gateway:
                 parts.append("velocidad normal")
         return "Listo, cambié la configuración: " + ", ".join(parts) + ". Pruébame pidiendo un audio."
 
+    async def _handle_natural_skill(
+        self,
+        skill: Any,
+        nat_match: Any,
+        original_text: str,
+        channel: str,
+        chat_id: Any,
+    ) -> None:
+        """Execute a skill that was matched via natural language patterns."""
+        try:
+            # Build args: use intent prefix + extracted args so skill's execute()
+            # can dispatch to the right sub-command.
+            args = nat_match.intent
+            if nat_match.args:
+                args = f"{nat_match.intent} {nat_match.args}"
+
+            result = await skill.execute(args, context={
+                "memory": self.memory,
+                "claude": self.claude,
+                "conversations": self.conversations,
+                "tasks": self.tasks,
+                "learning": self.learning_store,
+                "approval_gate": self.approval_gate,
+                "security": self.security,
+                "security_guardian": self.security,
+                "_original_text": original_text,
+                "_natural_match": True,
+                "send_fn": lambda msg: self._send(channel, chat_id, msg),
+                "receive_fn": None,
+                "skills_dir": getattr(self.skill_registry, "_user_skills_dir", None),
+                "registry": self.skill_registry,
+            })
+            data = getattr(result, "data", None) or {}
+            result_type = data.get("type", "")
+            if result_type == "screenshot" and data.get("path"):
+                await self._send_document(channel, chat_id, data["path"],
+                                          caption="Captura de pantalla")
+            elif result_type == "file" and data.get("path"):
+                await self._send_document(channel, chat_id, data["path"],
+                                          caption=result.message if result.message != data["path"] else None)
+            else:
+                await self._send(channel, chat_id, result.message)
+        except Exception:
+            log.exception("gateway.natural_skill_failed", skill=skill.name)
+            await self._send(channel, chat_id,
+                             "Hubo un error ejecutando el skill. Revisa los logs.")
+
     async def _handle_command(self, text: str, channel: str, chat_id: Any) -> None:
         if self.skill_registry is None:
             await self._send(channel, chat_id, "Sistema de skills no disponible.")
@@ -1235,32 +1504,31 @@ class Gateway:
                 log.exception("gateway.send_audio_failed")
 
     async def _take_and_send_screenshot(self, channel_name: str, chat_id: Any) -> None:
-        """Take a screenshot and send it directly to the user via Telegram."""
+        """Take separate screenshots per monitor and send each to Telegram."""
         log.info("gateway.screenshot_requested", channel=channel_name, chat_id=chat_id)
 
         try:
             from src.core.desktop_control import DesktopControl
             desktop = DesktopControl()
-            path = await desktop.take_screenshot()
-            file_size = Path(path).stat().st_size if Path(path).exists() else 0
-            log.info("gateway.screenshot_taken", path=path, size=file_size)
-            if file_size == 0:
-                raise RuntimeError("Screenshot file is empty (0 bytes)")
+            screenshots = await desktop.take_screenshots_per_monitor()
+            log.info("gateway.screenshots_taken", count=len(screenshots))
         except Exception as exc:
             log.exception("gateway.screenshot_capture_failed")
             await self._send(channel_name, chat_id,
                              f"No pude tomar la captura: {exc}")
             return
 
-        # Send as document (full quality, zoomable)
-        await self._send_document(channel_name, chat_id, path,
-                                  caption="Captura de pantalla")
-
-        # Clean up temp file
-        try:
-            Path(path).unlink(missing_ok=True)
-        except Exception:
-            pass
+        for path, caption in screenshots:
+            file_size = Path(path).stat().st_size if Path(path).exists() else 0
+            if file_size == 0:
+                log.warning("gateway.screenshot_empty", path=path)
+                continue
+            await self._send_document(channel_name, chat_id, path, caption=caption)
+            # Clean up temp file
+            try:
+                Path(path).unlink(missing_ok=True)
+            except Exception:
+                pass
 
     async def _send_typing(self, channel_name: str, chat_id: Any) -> None:
         ch = self.channels.get(channel_name)
@@ -1411,3 +1679,14 @@ class Gateway:
             log.info("gateway.session_summary_saved", session_id=session_id)
         except Exception:
             log.exception("gateway.session_summary_failed", session_id=session_id)
+
+    async def _sync_claude_code_memory(self) -> None:
+        """Periodic bidirectional sync with Claude Code memory files."""
+        if not self.claude_code_sync:
+            return
+        try:
+            result = await asyncio.to_thread(self.claude_code_sync.sync)
+            log.info("gateway.claude_code_sync_done",
+                     imported=result["imported"], exported=result["exported"])
+        except Exception:
+            log.warning("gateway.claude_code_sync_failed", exc_info=True)

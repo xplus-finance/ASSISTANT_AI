@@ -1,5 +1,6 @@
 """Memory subsystem: persistence, context, conversation, learning, tasks."""
 
+from src.memory.claude_code_sync import ClaudeCodeSync
 from src.memory.context import ContextBuilder, ConversationContext
 from src.memory.conversation import ConversationStore
 from src.memory.engine import MemoryEngine
@@ -15,4 +16,5 @@ __all__ = [
     "LearningStore",
     "ContextBuilder",
     "ConversationContext",
+    "ClaudeCodeSync",
 ]

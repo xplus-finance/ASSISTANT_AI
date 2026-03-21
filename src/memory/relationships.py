@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -19,9 +20,32 @@ _STAGES: list[tuple[str, int, int]] = [
     ("partner", 2000, 90),
 ]
 
+# Heuristic sentiment keywords (Spanish + English)
+_POSITIVE_PATTERNS = re.compile(
+    r"\b(?:gracias|genial|perfecto|excelente|increíble|bien hecho|me encanta|"
+    r"buen trabajo|thanks|great|perfect|excellent|awesome|love it|good job|"
+    r"exacto|exactamente|eso es|así es|bravo|dale|chévere|súper|buenísimo|"
+    r"te pasaste|crack|máquina|eres el mejor|nice|cool|amazing|fantastic)\b",
+    re.IGNORECASE,
+)
+
+_NEGATIVE_PATTERNS = re.compile(
+    r"\b(?:no sirve|está mal|error|no funciona|malo|pésimo|horrible|"
+    r"no me gusta|qué asco|inútil|basura|porquería|idiota|tonto|"
+    r"doesn't work|broken|terrible|awful|useless|wrong|bad|stupid|"
+    r"no así|eso no|mal hecho|arregla|fix this|no no no)\b",
+    re.IGNORECASE,
+)
+
+_FRUSTRATION_PATTERNS = re.compile(
+    r"\b(?:ya te dije|otra vez|de nuevo|cuántas veces|no entiendes|"
+    r"hazlo bien|ya basta|me desesperas|told you|again|how many times|"
+    r"seriously|come on|ugh|damn|dammit)\b",
+    re.IGNORECASE,
+)
+
 
 class RelationshipTracker:
-
 
     def __init__(self, engine: MemoryEngine) -> None:
         self._engine = engine
@@ -33,6 +57,54 @@ class RelationshipTracker:
         row_id = self._engine.insert_returning_id(sql, (note, sentiment))
         log.debug("relationship.observation_logged", sentiment=sentiment, row_id=row_id)
         return row_id
+
+    def analyze_sentiment(self, text: str) -> str:
+        """Auto-detect sentiment from user message text (heuristic)."""
+        if not text or len(text.strip()) < 2:
+            return "neutral"
+
+        pos_matches = len(_POSITIVE_PATTERNS.findall(text))
+        neg_matches = len(_NEGATIVE_PATTERNS.findall(text))
+        frust_matches = len(_FRUSTRATION_PATTERNS.findall(text))
+
+        neg_total = neg_matches + frust_matches
+
+        if pos_matches > 0 and neg_total == 0:
+            return "positive"
+        if neg_total > 0 and pos_matches == 0:
+            return "negative"
+        if neg_total > pos_matches:
+            return "negative"
+        if pos_matches > neg_total:
+            return "positive"
+        return "neutral"
+
+    def auto_track(self, user_message: str) -> None:
+        """Automatically analyze and log sentiment from a user message."""
+        sentiment = self.analyze_sentiment(user_message)
+        if sentiment != "neutral":
+            # Only log non-neutral to avoid noise
+            snippet = user_message[:100]
+            self.log_observation(f"Auto: {snippet}", sentiment=sentiment)
+
+    def get_recent_mood(self, last_n: int = 5) -> str:
+        """Get the dominant mood from the last N observations."""
+        rows = self._engine.fetchall(
+            "SELECT sentiment FROM relationship_log ORDER BY id DESC LIMIT ?",
+            (last_n,),
+        )
+        if not rows:
+            return "neutral"
+        sentiments = [r[0] for r in rows]
+        neg_count = sentiments.count("negative")
+        pos_count = sentiments.count("positive")
+        if neg_count >= 3:
+            return "frustrated"
+        if neg_count > pos_count:
+            return "negative"
+        if pos_count > neg_count:
+            return "positive"
+        return "neutral"
 
     def get_relationship_history(self, limit: int = 50) -> list[dict[str, Any]]:
         sql = "SELECT id, date, note, sentiment FROM relationship_log ORDER BY id DESC LIMIT ?"

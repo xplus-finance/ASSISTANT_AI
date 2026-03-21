@@ -208,8 +208,42 @@ CREATE TABLE IF NOT EXISTS error_solutions (
     context TEXT,
     occurrences INTEGER DEFAULT 1,
     last_seen TEXT DEFAULT (datetime('now')),
-    effectiveness REAL DEFAULT 1.0
+    effectiveness REAL DEFAULT 0.0,
+    times_applied INTEGER DEFAULT 0,
+    times_resolved INTEGER DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS notification_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT DEFAULT (datetime('now')),
+    category TEXT NOT NULL DEFAULT 'general',
+    source TEXT NOT NULL,
+    message TEXT NOT NULL,
+    priority TEXT DEFAULT 'NORMAL',
+    status TEXT DEFAULT 'sent' CHECK(status IN ('sent', 'sent_critical', 'read', 'dismissed', 'digest', 'discarded')),
+    user_response TEXT
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS error_solutions_fts USING fts5(
+    error_pattern, solution, content='error_solutions', content_rowid='id'
+);
+
+CREATE TRIGGER IF NOT EXISTS error_solutions_ai AFTER INSERT ON error_solutions BEGIN
+    INSERT INTO error_solutions_fts(rowid, error_pattern, solution)
+        VALUES (new.id, new.error_pattern, new.solution);
+END;
+
+CREATE TRIGGER IF NOT EXISTS error_solutions_ad AFTER DELETE ON error_solutions BEGIN
+    INSERT INTO error_solutions_fts(error_solutions_fts, rowid, error_pattern, solution)
+        VALUES ('delete', old.id, old.error_pattern, old.solution);
+END;
+
+CREATE TRIGGER IF NOT EXISTS error_solutions_au AFTER UPDATE ON error_solutions BEGIN
+    INSERT INTO error_solutions_fts(error_solutions_fts, rowid, error_pattern, solution)
+        VALUES ('delete', old.id, old.error_pattern, old.solution);
+    INSERT INTO error_solutions_fts(rowid, error_pattern, solution)
+        VALUES (new.id, new.error_pattern, new.solution);
+END;
 """
 
 _INDEXES = """
@@ -237,6 +271,10 @@ CREATE INDEX IF NOT EXISTS idx_task_patterns_type_key
     ON task_patterns(task_type, pattern_key);
 CREATE INDEX IF NOT EXISTS idx_error_solutions_pattern
     ON error_solutions(error_pattern);
+CREATE INDEX IF NOT EXISTS idx_notification_log_category
+    ON notification_log(category, timestamp);
+CREATE INDEX IF NOT EXISTS idx_notification_log_status
+    ON notification_log(status, timestamp);
 """
 
 

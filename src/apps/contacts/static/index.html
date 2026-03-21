@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>XPlus Contacts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📇</text></svg>">
+</head>
+<body>
+  <div class="app">
+    <!-- ── Sidebar ─────────────────────────────────── -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <div class="logo-icon">X+</div>
+          <div>
+            <div class="logo-text">XPlus Contacts</div>
+            <div class="logo-sub">by Firulais</div>
+          </div>
+        </div>
+        <div class="search-box">
+          <span class="search-icon">&#128269;</span>
+          <input type="text" id="search-input" placeholder="Buscar contactos...">
+        </div>
+      </div>
+
+      <div class="sidebar-stats">
+        <div class="stat-card">
+          <div class="stat-num" id="stat-total">0</div>
+          <div class="stat-label">Total</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="stat-favs">0</div>
+          <div class="stat-label">Favoritos</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="stat-week">0</div>
+          <div class="stat-label">Esta semana</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="stat-cats">0</div>
+          <div class="stat-label">Categorías</div>
+        </div>
+      </div>
+
+      <div class="sidebar-nav">
+        <div class="nav-section">
+          <div class="nav-section-title">Vistas</div>
+          <div id="cat-nav"><!-- JS renders --></div>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <button onclick="openImportModal()">&#128229; Importar</button>
+        <button onclick="exportAll()">&#128228; Exportar</button>
+      </div>
+    </div>
+
+    <!-- ── Contact List ────────────────────────────── -->
+    <div class="list-panel">
+      <div class="list-header">
+        <h2>Contactos <span class="count" id="list-count">0</span></h2>
+        <button class="btn-new" onclick="openNewModal()">+ Nuevo</button>
+      </div>
+      <div class="list-sort">
+        <span class="sort-chip active" data-sort="first_name" onclick="sortBy('first_name')">Nombre</span>
+        <span class="sort-chip" data-sort="company" onclick="sortBy('company')">Empresa</span>
+        <span class="sort-chip" data-sort="updated_at" onclick="sortBy('updated_at')">Reciente</span>
+        <span class="sort-chip" data-sort="last_contacted" onclick="sortBy('last_contacted')">Contactado</span>
+      </div>
+      <div class="contact-list" id="contact-list">
+        <div class="empty-list">
+          <div class="empty-icon">&#128100;</div>
+          <p>Cargando contactos...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Detail Panel ────────────────────────────── -->
+    <div class="detail-panel" id="detail-panel">
+      <div class="detail-empty">
+        <div class="detail-empty-icon">&#128100;</div>
+        <p>Selecciona un contacto para ver los detalles</p>
+        <p style="font-size: 12px; color: var(--text-muted);">o presiona <kbd>N</kbd> para crear uno nuevo</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Modal container ─────────────────────────── -->
+  <div class="modal-overlay" id="modal" onclick="if(event.target===this)closeModal()"></div>
+
+  <!-- ── Toast container ─────────────────────────── -->
+  <div class="toast-container" id="toasts"></div>
+
+  <!-- ── Keyboard hints ──────────────────────────── -->
+  <div class="kbd-hint">
+    <span><kbd>N</kbd> Nuevo</span>
+    <span><kbd>/</kbd> Buscar</span>
+    <span><kbd>Esc</kbd> Cerrar</span>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

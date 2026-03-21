@@ -10,6 +10,7 @@ import structlog
 from src.memory.conversation import ConversationStore
 from src.memory.engine import MemoryEngine, sanitize_fts_query
 from src.memory.learning import LearningStore
+from src.memory.relationships import RelationshipTracker
 from src.memory.tasks import TaskManager
 
 log = structlog.get_logger("assistant.memory.context")
@@ -31,15 +32,18 @@ class ConversationContext:
     error_patterns: list[dict[str, Any]] = field(default_factory=list)
     task_patterns: list[dict[str, Any]] = field(default_factory=list)
     execution_stats: dict[str, Any] = field(default_factory=dict)
+    relationship_stage: str = "stranger"
+    recent_mood: str = "neutral"
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
 class ContextBuilder:
-    def __init__(self, engine: MemoryEngine, conversation: ConversationStore, learning: LearningStore, tasks: TaskManager) -> None:
+    def __init__(self, engine: MemoryEngine, conversation: ConversationStore, learning: LearningStore, tasks: TaskManager, relationships: RelationshipTracker | None = None) -> None:
         self._engine = engine
         self._conversation = conversation
         self._learning = learning
         self._tasks = tasks
+        self._relationships = relationships
         self._profile_cache: dict[str, str] | None = None
 
     def invalidate_profile_cache(self) -> None:
@@ -88,6 +92,19 @@ class ContextBuilder:
         except Exception:
             pass
 
+        # Relationship context
+        rel_stage = "stranger"
+        rel_mood = "neutral"
+        if self._relationships:
+            try:
+                rel_stage = self._relationships.get_relationship_stage()
+            except Exception:
+                pass
+            try:
+                rel_mood = self._relationships.get_recent_mood(last_n=5)
+            except Exception:
+                pass
+
         ctx = ConversationContext(
             user_profile=profile, recent_messages=recent,
             relevant_facts=relevant_facts, relevant_knowledge=relevant_knowledge,
@@ -99,6 +116,8 @@ class ContextBuilder:
             error_patterns=error_patterns,
             task_patterns=best_patterns,
             execution_stats=exec_stats,
+            relationship_stage=rel_stage,
+            recent_mood=rel_mood,
         )
         log.debug("context.built", session_id=session_id, recent_count=len(recent),
                    facts_count=len(relevant_facts), procedures_count=len(procedures),

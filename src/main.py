@@ -42,6 +42,13 @@ class Settings(BaseSettings):
 
     db_encryption_key: str = ""
 
+    # Multi-model fallback
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o"
+    openai_base_url: str = ""
+    ollama_model: str = "llama3.2"
+    ollama_base_url: str = "http://localhost:11434"
+
     # Desktop pet
     pet_enabled: str = "false"
     pet_type: str = "dog"

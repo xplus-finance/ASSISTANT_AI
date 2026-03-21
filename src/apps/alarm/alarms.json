@@ -1,0 +1,7 @@
+{
+  "alarms": [],
+  "next_id": 2,
+  "default_snooze_minutes": 5,
+  "default_theme": "default",
+  "telegram_backup": true
+}

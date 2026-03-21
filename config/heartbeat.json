@@ -1,0 +1,105 @@
+{
+  "heartbeat": {
+    "enabled": true,
+    "interval_seconds": 60,
+    "ai_reasoning_interval_minutes": 30,
+    "timezone": "America/New_York"
+  },
+  "priority_levels": {
+    "CRITICAL": {
+      "value": 4,
+      "description": "Inmediato — rompe modo DND",
+      "color": "🔴"
+    },
+    "HIGH": {
+      "value": 3,
+      "description": "Próximo ciclo de heartbeat",
+      "color": "🟠"
+    },
+    "NORMAL": {
+      "value": 2,
+      "description": "Se acumula en digest",
+      "color": "🔵"
+    },
+    "LOW": {
+      "value": 1,
+      "description": "Solo si pregunta",
+      "color": "⚪"
+    }
+  },
+  "do_not_disturb": {
+    "enabled": true,
+    "schedule": {
+      "start_hour": 23,
+      "end_hour": 6
+    },
+    "allow_critical": true
+  },
+  "digest": {
+    "enabled": true,
+    "times": ["08:00", "13:00", "18:00"],
+    "min_items_to_send": 1,
+    "max_items_per_digest": 20
+  },
+  "checks": {
+    "overdue_tasks": {
+      "enabled": true,
+      "interval_minutes": 30,
+      "default_priority": "HIGH"
+    },
+    "system_health": {
+      "enabled": true,
+      "interval_minutes": 60,
+      "default_priority": "NORMAL",
+      "thresholds": {
+        "disk_percent_warning": 85,
+        "disk_percent_critical": 95,
+        "ram_percent_warning": 85,
+        "ram_percent_critical": 95,
+        "cpu_percent_warning": 90
+      }
+    },
+    "morning_summary": {
+      "enabled": true,
+      "interval_minutes": 15,
+      "hour_range": [7, 9],
+      "default_priority": "HIGH"
+    },
+    "git_monitor": {
+      "enabled": true,
+      "interval_minutes": 15,
+      "default_priority": "NORMAL",
+      "repos": []
+    },
+    "web_monitor": {
+      "enabled": true,
+      "interval_minutes": 5,
+      "default_priority": "HIGH",
+      "urls": [],
+      "timeout_seconds": 10,
+      "ssl_warning_days": 14
+    },
+    "error_pattern_monitor": {
+      "enabled": true,
+      "interval_minutes": 10,
+      "default_priority": "HIGH",
+      "threshold_count": 3,
+      "threshold_window_minutes": 60
+    },
+    "contextual_reminders": {
+      "enabled": true,
+      "interval_minutes": 60,
+      "default_priority": "NORMAL",
+      "afternoon_reminder_hour": 16,
+      "inactivity_hours": 3
+    }
+  },
+  "relevance_learning": {
+    "enabled": true,
+    "track_read": true,
+    "track_dismissed": true,
+    "auto_adjust_threshold": 10,
+    "downgrade_after_ignores": 5,
+    "upgrade_after_responses": 3
+  }
+}

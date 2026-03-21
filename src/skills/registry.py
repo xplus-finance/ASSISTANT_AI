@@ -152,6 +152,25 @@ class SkillRegistry:
                     return skill
         return None
 
+    def find_skill_natural(self, text: str) -> tuple[BaseSkill | None, "NaturalMatch | None"]:
+        """Try to match text against natural language patterns of all skills.
+
+        Returns (skill, match) with highest confidence, or (None, None).
+        """
+        from src.skills.base_skill import NaturalMatch
+
+        best_skill: BaseSkill | None = None
+        best_match: NaturalMatch | None = None
+
+        with self._lock:
+            for skill in self._skills.values():
+                match = skill.matches_natural(text)
+                if match and (best_match is None or match.confidence > best_match.confidence):
+                    best_skill = skill
+                    best_match = match
+
+        return best_skill, best_match
+
     def get_all(self) -> list[BaseSkill]:
         with self._lock:
             return list(self._skills.values())

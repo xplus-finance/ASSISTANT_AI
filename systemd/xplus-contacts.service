@@ -1,0 +1,17 @@
+[Unit]
+Description=XPlus Contacts — Personal Contact Manager
+After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=orlando
+WorkingDirectory=/tmp/ASSISTANT_AI
+ExecStart=/usr/bin/python3 -m src.apps.contacts.server
+Restart=on-failure
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

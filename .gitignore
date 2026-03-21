@@ -12,6 +12,8 @@ auth_info/
 data/
 logs/
 models/
+output/
+mcps/
 
 # --- Skills del usuario (pueden contener lógica personalizada) ---
 skills/*.py

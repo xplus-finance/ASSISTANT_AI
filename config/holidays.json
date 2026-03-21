@@ -1,0 +1,520 @@
+{
+  "meta": {
+    "description": "Calendario de fechas conmemorativas — USA + Florida + Cape Coral",
+    "updated": "2026-03-20",
+    "timezone": "America/New_York"
+  },
+  "holidays": [
+    {
+      "name": "Dia de Año Nuevo",
+      "date": "01-01",
+      "type": "federal",
+      "emoji": "🎆",
+      "description": "New Year's Day — feriado federal"
+    },
+    {
+      "name": "Dia de Martin Luther King Jr.",
+      "date": "3rd-monday-01",
+      "type": "federal",
+      "emoji": "✊",
+      "description": "MLK Day — tercer lunes de enero"
+    },
+    {
+      "name": "Dia de los Presidentes",
+      "date": "3rd-monday-02",
+      "type": "federal",
+      "emoji": "🇺🇸",
+      "description": "Presidents' Day — tercer lunes de febrero"
+    },
+    {
+      "name": "Super Bowl Sunday",
+      "date": "2nd-sunday-02",
+      "type": "cultural",
+      "emoji": "🏈",
+      "description": "Domingo del Super Bowl — segundo domingo de febrero"
+    },
+    {
+      "name": "Dia de San Valentin",
+      "date": "02-14",
+      "type": "cultural",
+      "emoji": "❤️",
+      "description": "Valentine's Day"
+    },
+    {
+      "name": "Dia de la Mujer",
+      "date": "03-08",
+      "type": "international",
+      "emoji": "👩",
+      "description": "International Women's Day"
+    },
+    {
+      "name": "Cambio de horario (Spring Forward)",
+      "date": "2nd-sunday-03",
+      "type": "observance",
+      "emoji": "⏰",
+      "description": "Daylight Saving Time — adelantar 1 hora"
+    },
+    {
+      "name": "Dia de San Patricio",
+      "date": "03-17",
+      "type": "cultural",
+      "emoji": "☘️",
+      "description": "St. Patrick's Day"
+    },
+    {
+      "name": "Inicio de Primavera",
+      "date": "03-20",
+      "type": "seasonal",
+      "emoji": "🌸",
+      "description": "Spring Equinox"
+    },
+    {
+      "name": "Dia de los Inocentes (April Fools)",
+      "date": "04-01",
+      "type": "cultural",
+      "emoji": "🤡",
+      "description": "April Fools' Day"
+    },
+    {
+      "name": "Dia de la Tierra",
+      "date": "04-22",
+      "type": "observance",
+      "emoji": "🌍",
+      "description": "Earth Day"
+    },
+    {
+      "name": "Dia del Arbol (Arbor Day)",
+      "date": "last-friday-04",
+      "type": "observance",
+      "emoji": "🌳",
+      "description": "Arbor Day — ultimo viernes de abril"
+    },
+    {
+      "name": "Cinco de Mayo",
+      "date": "05-05",
+      "type": "cultural",
+      "emoji": "🇲🇽",
+      "description": "Cinco de Mayo — celebracion de la cultura mexicana en EE.UU."
+    },
+    {
+      "name": "Dia de las Madres",
+      "date": "2nd-sunday-05",
+      "type": "cultural",
+      "emoji": "👩‍👧",
+      "description": "Mother's Day — segundo domingo de mayo"
+    },
+    {
+      "name": "Dia de los Caidos (Memorial Day)",
+      "date": "last-monday-05",
+      "type": "federal",
+      "emoji": "🎖️",
+      "description": "Memorial Day — ultimo lunes de mayo"
+    },
+    {
+      "name": "Dia de la Bandera",
+      "date": "06-14",
+      "type": "observance",
+      "emoji": "🇺🇸",
+      "description": "Flag Day"
+    },
+    {
+      "name": "Juneteenth",
+      "date": "06-19",
+      "type": "federal",
+      "emoji": "✊🏿",
+      "description": "Juneteenth — Dia de la Emancipacion, feriado federal desde 2021"
+    },
+    {
+      "name": "Dia de los Padres",
+      "date": "3rd-sunday-06",
+      "type": "cultural",
+      "emoji": "👨‍👧",
+      "description": "Father's Day — tercer domingo de junio"
+    },
+    {
+      "name": "Inicio de Verano",
+      "date": "06-21",
+      "type": "seasonal",
+      "emoji": "☀️",
+      "description": "Summer Solstice"
+    },
+    {
+      "name": "Dia de la Independencia",
+      "date": "07-04",
+      "type": "federal",
+      "emoji": "🎆🇺🇸",
+      "description": "Independence Day / 4th of July — feriado federal"
+    },
+    {
+      "name": "Temporada de Huracanes (pico)",
+      "date": "08-15",
+      "type": "local_fl",
+      "emoji": "🌀",
+      "description": "Pico de temporada de huracanes en Florida — preparar suministros"
+    },
+    {
+      "name": "Dia del Trabajo (Labor Day)",
+      "date": "1st-monday-09",
+      "type": "federal",
+      "emoji": "⚒️",
+      "description": "Labor Day — primer lunes de septiembre"
+    },
+    {
+      "name": "Dia del Patriota",
+      "date": "09-11",
+      "type": "observance",
+      "emoji": "🕊️",
+      "description": "Patriot Day — en memoria del 9/11"
+    },
+    {
+      "name": "Inicio de Otoño",
+      "date": "09-22",
+      "type": "seasonal",
+      "emoji": "🍂",
+      "description": "Autumn Equinox"
+    },
+    {
+      "name": "Mes de la Herencia Hispana (inicio)",
+      "date": "09-15",
+      "type": "cultural",
+      "emoji": "🇭🇳🇲🇽🇨🇴",
+      "description": "Hispanic Heritage Month — del 15 sept al 15 oct"
+    },
+    {
+      "name": "Dia de la Raza / Columbus Day",
+      "date": "2nd-monday-10",
+      "type": "federal",
+      "emoji": "⛵",
+      "description": "Columbus Day / Indigenous Peoples' Day — segundo lunes de octubre"
+    },
+    {
+      "name": "Halloween",
+      "date": "10-31",
+      "type": "cultural",
+      "emoji": "🎃",
+      "description": "Halloween"
+    },
+    {
+      "name": "Cambio de horario (Fall Back)",
+      "date": "1st-sunday-11",
+      "type": "observance",
+      "emoji": "⏰",
+      "description": "Daylight Saving ends — atrasar 1 hora"
+    },
+    {
+      "name": "Dia de los Veteranos",
+      "date": "11-11",
+      "type": "federal",
+      "emoji": "🎖️",
+      "description": "Veterans Day — feriado federal"
+    },
+    {
+      "name": "Dia de Accion de Gracias",
+      "date": "4th-thursday-11",
+      "type": "federal",
+      "emoji": "🦃",
+      "description": "Thanksgiving — cuarto jueves de noviembre"
+    },
+    {
+      "name": "Black Friday",
+      "date": "4th-friday-11",
+      "type": "commercial",
+      "emoji": "🛒",
+      "description": "Black Friday — dia despues de Thanksgiving"
+    },
+    {
+      "name": "Cyber Monday",
+      "date": "4th-monday-after-thanksgiving",
+      "type": "commercial",
+      "emoji": "💻",
+      "description": "Cyber Monday — lunes despues de Thanksgiving"
+    },
+    {
+      "name": "Giving Tuesday",
+      "date": "giving-tuesday",
+      "type": "cultural",
+      "emoji": "🤝",
+      "description": "Giving Tuesday — martes despues de Thanksgiving"
+    },
+    {
+      "name": "Pearl Harbor Remembrance Day",
+      "date": "12-07",
+      "type": "observance",
+      "emoji": "🕊️",
+      "description": "Dia de Pearl Harbor"
+    },
+    {
+      "name": "Inicio de Invierno",
+      "date": "12-21",
+      "type": "seasonal",
+      "emoji": "❄️",
+      "description": "Winter Solstice"
+    },
+    {
+      "name": "Nochebuena",
+      "date": "12-24",
+      "type": "cultural",
+      "emoji": "🎄",
+      "description": "Christmas Eve"
+    },
+    {
+      "name": "Navidad",
+      "date": "12-25",
+      "type": "federal",
+      "emoji": "🎅",
+      "description": "Christmas Day — feriado federal"
+    },
+    {
+      "name": "Nochevieja",
+      "date": "12-31",
+      "type": "cultural",
+      "emoji": "🥂",
+      "description": "New Year's Eve"
+    },
+    {
+      "name": "Dia Nacional del Manatí",
+      "date": "03-26",
+      "type": "local_fl",
+      "emoji": "🦭",
+      "description": "National Manatee Day — Florida es hogar de manatíes, Cape Coral tiene muchos"
+    },
+    {
+      "name": "Pascua Florida Day",
+      "date": "04-02",
+      "type": "state_fl",
+      "emoji": "🌺",
+      "description": "Dia de Pascua Florida — descubrimiento de Florida por Ponce de Leon (1513)"
+    },
+    {
+      "name": "Inicio temporada de huracanes",
+      "date": "06-01",
+      "type": "local_fl",
+      "emoji": "🌀",
+      "description": "Hurricane Season starts — preparar kit de emergencia"
+    },
+    {
+      "name": "Fin temporada de huracanes",
+      "date": "11-30",
+      "type": "local_fl",
+      "emoji": "🌀",
+      "description": "Hurricane Season ends"
+    },
+    {
+      "name": "Florida Admission Day",
+      "date": "03-03",
+      "type": "state_fl",
+      "emoji": "🌴",
+      "description": "Florida se unio a la Union en 1845 — dia de la estadidad"
+    },
+    {
+      "name": "Cape Coral Festival of the Arts",
+      "date": "01-11",
+      "type": "local_capecoral",
+      "emoji": "🎨",
+      "description": "Festival anual de artes en Cape Coral — segundo fin de semana de enero"
+    },
+    {
+      "name": "Coconut Festival Cape Coral",
+      "date": "11-08",
+      "type": "local_capecoral",
+      "emoji": "🥥",
+      "description": "Coconut Festival — evento anual de Cape Coral"
+    },
+    {
+      "name": "Cape Coral Red White and Boom",
+      "date": "07-04",
+      "type": "local_capecoral",
+      "emoji": "💥",
+      "description": "Red White & Boom — celebracion del 4 de julio de Cape Coral en el rio"
+    },
+    {
+      "name": "Cape Coral Oktoberfest",
+      "date": "10-18",
+      "type": "local_capecoral",
+      "emoji": "🍺",
+      "description": "Oktoberfest de Cape Coral — tercer fin de semana de octubre"
+    },
+    {
+      "name": "Cape Coral Bike Night",
+      "date": "2nd-saturday-11",
+      "type": "local_capecoral",
+      "emoji": "🏍️",
+      "description": "Bike Night en Cape Coral Parkway"
+    },
+    {
+      "name": "Dia de Accion de Gracias (viernes libre Florida)",
+      "date": "4th-friday-11",
+      "type": "state_fl",
+      "emoji": "🌴",
+      "description": "Florida state holiday — dia despues de Thanksgiving"
+    },
+    {
+      "name": "Dia de los Enamorados / Galentines",
+      "date": "02-13",
+      "type": "cultural",
+      "emoji": "💕",
+      "description": "Galentine's Day"
+    },
+    {
+      "name": "Groundhog Day",
+      "date": "02-02",
+      "type": "cultural",
+      "emoji": "🦫",
+      "description": "Dia de la Marmota"
+    },
+    {
+      "name": "Tax Day",
+      "date": "04-15",
+      "type": "financial",
+      "emoji": "💰",
+      "description": "Fecha limite para declarar impuestos federales"
+    },
+    {
+      "name": "Election Day",
+      "date": "1st-tuesday-after-1st-monday-11",
+      "type": "civic",
+      "emoji": "🗳️",
+      "description": "Dia de elecciones — primer martes despues del primer lunes de noviembre"
+    },
+    {
+      "name": "Small Business Saturday",
+      "date": "small-business-saturday",
+      "type": "commercial",
+      "emoji": "🏪",
+      "description": "Small Business Saturday — sabado despues de Thanksgiving"
+    },
+    {
+      "name": "Dia de la Constitucion",
+      "date": "09-17",
+      "type": "observance",
+      "emoji": "📜",
+      "description": "Constitution Day"
+    },
+    {
+      "name": "National Hispanic Heritage Month (fin)",
+      "date": "10-15",
+      "type": "cultural",
+      "emoji": "🎉",
+      "description": "Fin del Mes de la Herencia Hispana"
+    },
+    {
+      "name": "Dia Internacional del Trabajador",
+      "date": "05-01",
+      "type": "international",
+      "emoji": "✊",
+      "description": "May Day / International Workers' Day"
+    },
+    {
+      "name": "Dia de la Independencia de Puerto Rico",
+      "date": "07-25",
+      "type": "cultural",
+      "emoji": "🇵🇷",
+      "description": "Constitucion de Puerto Rico"
+    },
+    {
+      "name": "Dia del Emigrante",
+      "date": "10-03",
+      "type": "cultural",
+      "emoji": "🌎",
+      "description": "Dia en honor a los emigrantes"
+    },
+    {
+      "name": "Rosa Parks Day",
+      "date": "12-01",
+      "type": "observance",
+      "emoji": "🚌",
+      "description": "Rosa Parks Day — Florida observa este dia"
+    },
+    {
+      "name": "Susan B. Anthony Day",
+      "date": "02-15",
+      "type": "observance",
+      "emoji": "👩",
+      "description": "Florida observa este dia en honor al sufragio femenino"
+    },
+    {
+      "name": "Emancipation Day",
+      "date": "05-20",
+      "type": "state_fl",
+      "emoji": "🔔",
+      "description": "Florida Emancipation Day — abolicion de la esclavitud en Florida (1865)"
+    },
+    {
+      "name": "National Nurses Day",
+      "date": "05-06",
+      "type": "observance",
+      "emoji": "🏥",
+      "description": "Dia Nacional de las Enfermeras"
+    },
+    {
+      "name": "Armed Forces Day",
+      "date": "3rd-saturday-05",
+      "type": "observance",
+      "emoji": "🪖",
+      "description": "Dia de las Fuerzas Armadas — tercer sabado de mayo"
+    },
+    {
+      "name": "National Teacher Appreciation Day",
+      "date": "1st-tuesday-05",
+      "type": "observance",
+      "emoji": "📚",
+      "description": "Dia del Maestro — primer martes de mayo (semana completa)"
+    },
+    {
+      "name": "Florida Water Conservation Month (inicio)",
+      "date": "04-01",
+      "type": "state_fl",
+      "emoji": "💧",
+      "description": "Abril es mes de conservacion del agua en Florida"
+    },
+    {
+      "name": "Lee County Fair",
+      "date": "02-27",
+      "type": "local_capecoral",
+      "emoji": "🎡",
+      "description": "Feria del condado Lee — febrero/marzo, Cape Coral pertenece a Lee County"
+    },
+    {
+      "name": "Cape Coral Cardboard Boat Regatta",
+      "date": "04-26",
+      "type": "local_capecoral",
+      "emoji": "🚣",
+      "description": "Regata de botes de carton — evento divertido anual en Four Freedoms Park"
+    },
+    {
+      "name": "Taste of Cape Coral",
+      "date": "11-15",
+      "type": "local_capecoral",
+      "emoji": "🍽️",
+      "description": "Festival gastronomico anual de Cape Coral"
+    },
+    {
+      "name": "Cape Coral Holiday Boat Parade",
+      "date": "12-13",
+      "type": "local_capecoral",
+      "emoji": "🎄⛵",
+      "description": "Desfile de botes decorados por los canales de Cape Coral"
+    },
+    {
+      "name": "Dia de la Independencia de Honduras",
+      "date": "09-15",
+      "type": "cultural",
+      "emoji": "🇭🇳",
+      "description": "Independencia de Honduras — gran comunidad hondureña en Cape Coral"
+    }
+  ],
+  "easter_dates": {
+    "_comment": "Pascua cambia cada año — calculadas hasta 2035",
+    "2025": "04-20",
+    "2026": "04-05",
+    "2027": "03-28",
+    "2028": "04-16",
+    "2029": "04-01",
+    "2030": "04-21",
+    "2031": "04-13",
+    "2032": "03-28",
+    "2033": "04-17",
+    "2034": "04-09",
+    "2035": "03-25"
+  }
+}

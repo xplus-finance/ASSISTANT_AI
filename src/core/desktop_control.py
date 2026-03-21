@@ -27,11 +27,98 @@ class DesktopControl:
             return await self._screenshot_macos(output)
         return await self._screenshot_linux(output)
 
+    async def _clear_selection(self) -> None:
+        """Release stuck modifiers and deselect text in key windows before screenshot."""
+        if not shutil.which("xdotool"):
+            return
+        try:
+            # 1. Release ALL modifier keys that might be stuck
+            for key in ("shift", "ctrl", "alt", "super", "Meta_L", "Meta_R"):
+                proc = await asyncio.create_subprocess_exec(
+                    "xdotool", "keyup", key,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                await asyncio.wait_for(proc.communicate(), timeout=2)
+
+            await asyncio.sleep(0.1)
+
+            # 2. Remember current active window to restore focus later
+            original_window = None
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    "xdotool", "getactivewindow",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=3)
+                original_window = stdout.decode().strip()
+            except Exception:
+                pass
+
+            # 3. Find VS Code / editors / browsers and send Escape to deselect
+            #    These are the apps most likely to have text selected (blue highlight)
+            if shutil.which("wmctrl"):
+                proc = await asyncio.create_subprocess_exec(
+                    "wmctrl", "-l",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+                for line in stdout.decode().strip().split("\n"):
+                    parts = line.split(None, 3)
+                    if len(parts) < 4:
+                        continue
+                    wid, title = parts[0], parts[3].lower()
+                    # Only clear selection in editors and browsers
+                    if any(k in title for k in ("visual studio code", "code - ",
+                                                 "sublime", "gedit", "kate",
+                                                 "firefox", "chrome", "chromium")):
+                        try:
+                            proc = await asyncio.create_subprocess_exec(
+                                "xdotool", "windowactivate", "--sync", wid,
+                                stdout=asyncio.subprocess.PIPE,
+                                stderr=asyncio.subprocess.PIPE,
+                            )
+                            await asyncio.wait_for(proc.communicate(), timeout=2)
+                            await asyncio.sleep(0.1)
+                            for _ in range(2):
+                                proc = await asyncio.create_subprocess_exec(
+                                    "xdotool", "key", "--clearmodifiers", "Escape",
+                                    stdout=asyncio.subprocess.PIPE,
+                                    stderr=asyncio.subprocess.PIPE,
+                                )
+                                await asyncio.wait_for(proc.communicate(), timeout=2)
+                                await asyncio.sleep(0.1)
+                        except Exception:
+                            continue
+
+            # 4. Restore original window focus
+            if original_window:
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        "xdotool", "windowactivate", original_window,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    await asyncio.wait_for(proc.communicate(), timeout=2)
+                except Exception:
+                    pass
+
+            await asyncio.sleep(0.3)
+        except Exception:
+            pass
+
     async def _screenshot_linux(self, output: str) -> str:
+        # Clear any selection/highlight before capturing
+        await self._clear_selection()
+
+        # Prefer import (ImageMagick) — silent, no overlay/flash
+        # Then scrot, then gnome-screenshot (last: it can cause blue flash)
         for tool, cmd in [
-            ("scrot", ["scrot", output]),
-            ("gnome-screenshot", ["gnome-screenshot", "-f", output]),
             ("import", ["import", "-window", "root", output]),
+            ("scrot", ["scrot", "-o", output]),
+            ("gnome-screenshot", ["gnome-screenshot", "-f", output]),
         ]:
             if shutil.which(tool):
                 proc = await asyncio.create_subprocess_exec(
@@ -84,6 +171,122 @@ class DesktopControl:
         raise RuntimeError(
             "No screenshot tool available. Install: pip install pyautogui"
         )
+
+    async def take_screenshots_per_monitor(self) -> list[tuple[str, str]]:
+        """Take separate screenshots for each monitor on Linux.
+
+        Returns list of (path, caption) tuples.
+        Uses xrandr to detect monitors and scrot -a for per-monitor capture.
+        """
+        if IS_WINDOWS or IS_MACOS:
+            path = await self.take_screenshot()
+            return [(path, "Captura de pantalla")]
+
+        await self._clear_selection()
+
+        # Parse xrandr for connected monitors
+        monitors: list[tuple[str, int, int, int, int]] = []  # name, w, h, x, y
+        if shutil.which("xrandr"):
+            proc = await asyncio.create_subprocess_exec(
+                "xrandr", "--query",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+            import re
+            for line in stdout.decode().splitlines():
+                m = re.search(r"(\S+)\s+connected.*?(\d+)x(\d+)\+(\d+)\+(\d+)", line)
+                if m:
+                    monitors.append((
+                        m.group(1),
+                        int(m.group(2)), int(m.group(3)),
+                        int(m.group(4)), int(m.group(5)),
+                    ))
+
+        if not monitors:
+            path = await self.take_screenshot()
+            return [(path, "Captura de pantalla")]
+
+        # Sort by X offset (left to right)
+        monitors.sort(key=lambda m: m[3])
+        results: list[tuple[str, str]] = []
+        labels = ["izquierdo", "derecho", "tercero", "cuarto"]
+
+        # Strategy: capture full desktop ONCE (silent, no overlay), then crop per monitor
+        fd_full, full_path = tempfile.mkstemp(suffix=".png", prefix="screenshot_full_")
+        os.close(fd_full)
+
+        captured_full = False
+        # Prefer import (silent) over scrot over gnome-screenshot
+        for tool, cmd in [
+            ("import", ["import", "-window", "root", full_path]),
+            ("scrot", ["scrot", "-o", full_path]),
+            ("gnome-screenshot", ["gnome-screenshot", "-f", full_path]),
+        ]:
+            if shutil.which(tool):
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                await asyncio.wait_for(proc.communicate(), timeout=10)
+                if proc.returncode == 0 and Path(full_path).exists() and Path(full_path).stat().st_size > 0:
+                    captured_full = True
+                    log.info("desktop.screenshot_full", tool=tool, path=full_path)
+                    break
+
+        if not captured_full:
+            try:
+                Path(full_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+            path = await self.take_screenshot()
+            return [(path, "Captura de pantalla")]
+
+        # Crop each monitor from the full image using convert (ImageMagick)
+        for i, (name, w, h, x, y) in enumerate(monitors):
+            fd, output = tempfile.mkstemp(suffix=".png", prefix=f"screenshot_mon{i}_")
+            os.close(fd)
+            label = labels[i] if i < len(labels) else f"monitor {i+1}"
+
+            if shutil.which("convert"):
+                proc = await asyncio.create_subprocess_exec(
+                    "convert", full_path, "-crop", f"{w}x{h}+{x}+{y}", "+repage", output,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                await asyncio.wait_for(proc.communicate(), timeout=10)
+                if proc.returncode == 0 and Path(output).exists() and Path(output).stat().st_size > 0:
+                    results.append((output, f"Monitor {label} ({name})"))
+                    log.info("desktop.screenshot_monitor", monitor=name, label=label, path=output)
+                    continue
+
+            # Fallback if convert not available: use ffmpeg to crop
+            if shutil.which("ffmpeg"):
+                proc = await asyncio.create_subprocess_exec(
+                    "ffmpeg", "-y", "-i", full_path,
+                    "-vf", f"crop={w}:{h}:{x}:{y}",
+                    output,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                await asyncio.wait_for(proc.communicate(), timeout=10)
+                if proc.returncode == 0 and Path(output).exists() and Path(output).stat().st_size > 0:
+                    results.append((output, f"Monitor {label} ({name})"))
+                    log.info("desktop.screenshot_monitor", monitor=name, label=label, path=output)
+                    continue
+
+            # Last resort: send the full screenshot
+            results.append((full_path, f"Monitor {label} ({name}) — completo"))
+            break
+
+        # Clean up full screenshot
+        try:
+            Path(full_path).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+        return results if results else [(await self.take_screenshot(), "Captura de pantalla")]
 
     async def type_text(self, text: str, delay_ms: int = 50) -> None:
         if IS_WINDOWS:
