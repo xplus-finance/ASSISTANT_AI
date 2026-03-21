@@ -304,14 +304,18 @@ Write-Work "Base de datos (apsw)..."
 # Core deps
 $coreDeps = @(
     @{ name = "Telegram bot";    pkg = "python-telegram-bot[ext]" },
-    @{ name = "HTTP client";     pkg = "httpx aiohttp" },
-    @{ name = "Audio (pydub)";   pkg = "pydub pyaudioop" },
-    @{ name = "Pydantic";        pkg = "pydantic>=2.0 pydantic-settings" },
+    @{ name = "httpx";           pkg = "httpx" },
+    @{ name = "aiohttp";         pkg = "aiohttp" },
+    @{ name = "pydub";           pkg = "pydub" },
+    @{ name = "pyaudioop";       pkg = "pyaudioop" },
+    @{ name = "Pydantic";        pkg = "pydantic>=2.0" },
+    @{ name = "Pydantic Settings"; pkg = "pydantic-settings" },
     @{ name = "Scheduler";       pkg = "APScheduler>=3.10" },
     @{ name = "File watcher";    pkg = "watchdog" },
     @{ name = "Web scraping";    pkg = "beautifulsoup4" },
     @{ name = "Logging";         pkg = "structlog" },
-    @{ name = "Crypto";          pkg = "cryptography bcrypt" },
+    @{ name = "Cryptography";    pkg = "cryptography" },
+    @{ name = "bcrypt";          pkg = "bcrypt" },
     @{ name = "Config";          pkg = "python-dotenv" },
     @{ name = "TTS (gTTS)";      pkg = "gTTS" },
     @{ name = "OpenAI";          pkg = "openai" }
