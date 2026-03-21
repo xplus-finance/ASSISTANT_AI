@@ -307,7 +307,7 @@ $coreDeps = @(
     @{ name = "httpx";           pkg = "httpx" },
     @{ name = "aiohttp";         pkg = "aiohttp" },
     @{ name = "pydub";           pkg = "pydub" },
-    @{ name = "pyaudioop";       pkg = "pyaudioop" },
+    @{ name = "audioop-lts";     pkg = "audioop-lts" },
     @{ name = "Pydantic";        pkg = "pydantic>=2.0" },
     @{ name = "Pydantic Settings"; pkg = "pydantic-settings" },
     @{ name = "Scheduler";       pkg = "APScheduler>=3.10" },
@@ -318,7 +318,8 @@ $coreDeps = @(
     @{ name = "bcrypt";          pkg = "bcrypt" },
     @{ name = "Config";          pkg = "python-dotenv" },
     @{ name = "TTS (gTTS)";      pkg = "gTTS" },
-    @{ name = "OpenAI";          pkg = "openai" }
+    @{ name = "OpenAI";          pkg = "openai" },
+    @{ name = "Pillow";          pkg = "Pillow" }
 )
 
 foreach ($dep in $coreDeps) {
