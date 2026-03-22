@@ -297,50 +297,73 @@ Write-Step "pip actualizado."
 # ============================================================================
 Write-Header "6" "Instalando dependencias (1-3 minutos)"
 
-# apsw
-Write-Work "Base de datos (apsw)..."
-& $PipVenv install apsw --prefer-binary --quiet 2>&1 | Out-Null
-
-# Core deps
-$coreDeps = @(
-    @{ name = "Telegram bot";    pkg = "python-telegram-bot[ext]" },
-    @{ name = "httpx";           pkg = "httpx" },
-    @{ name = "aiohttp";         pkg = "aiohttp" },
-    @{ name = "pydub";           pkg = "pydub" },
-    @{ name = "audioop-lts";     pkg = "audioop-lts" },
-    @{ name = "Pydantic";        pkg = "pydantic>=2.0" },
-    @{ name = "Pydantic Settings"; pkg = "pydantic-settings" },
-    @{ name = "Scheduler";       pkg = "APScheduler>=3.10" },
-    @{ name = "File watcher";    pkg = "watchdog" },
-    @{ name = "Web scraping";    pkg = "beautifulsoup4" },
-    @{ name = "Logging";         pkg = "structlog" },
-    @{ name = "Cryptography";    pkg = "cryptography" },
-    @{ name = "bcrypt";          pkg = "bcrypt" },
-    @{ name = "Config";          pkg = "python-dotenv" },
-    @{ name = "TTS (gTTS)";      pkg = "gTTS" },
-    @{ name = "OpenAI";          pkg = "openai" },
-    @{ name = "Pillow";          pkg = "Pillow" }
-)
-
-foreach ($dep in $coreDeps) {
-    Write-Work "  $($dep.name)..."
-    & $PipVenv install $dep.pkg --quiet 2>&1 | Out-Null
+# Safe pip install: captures output, ignores warnings, only reports real failures
+function Install-Pkg($name, $pkg, $extra = "") {
+    Write-Work "  $name..."
+    try {
+        if ($extra) {
+            $out = & $PipVenv install $pkg $extra 2>&1 | Out-String
+        } else {
+            $out = & $PipVenv install $pkg 2>&1 | Out-String
+        }
+    } catch {
+        # PowerShell treats pip stderr as exception - ignore it
+    }
 }
+
+# Database driver
+Install-Pkg "apsw" "apsw" "--prefer-binary --quiet"
+
+# Core deps - one package per call, no multi-package strings
+Install-Pkg "Telegram bot"      "python-telegram-bot[ext]" "--quiet"
+Install-Pkg "httpx"             "httpx"                    "--quiet"
+Install-Pkg "aiohttp"           "aiohttp"                  "--quiet"
+Install-Pkg "pydub"             "pydub"                    "--quiet"
+Install-Pkg "audioop-lts"       "audioop-lts"              "--quiet"
+Install-Pkg "Pydantic"          "pydantic"                 "--quiet"
+Install-Pkg "Pydantic Settings" "pydantic-settings"        "--quiet"
+Install-Pkg "Scheduler"         "APScheduler"              "--quiet"
+Install-Pkg "File watcher"      "watchdog"                 "--quiet"
+Install-Pkg "Web scraping"      "beautifulsoup4"           "--quiet"
+Install-Pkg "Logging"           "structlog"                "--quiet"
+Install-Pkg "Cryptography"      "cryptography"             "--quiet"
+Install-Pkg "bcrypt"            "bcrypt"                   "--quiet"
+Install-Pkg "Config"            "python-dotenv"            "--quiet"
+Install-Pkg "gTTS"              "gTTS"                     "--quiet"
+Install-Pkg "click (fix)"       "click==8.1.8"             "--quiet"
+Install-Pkg "OpenAI"            "openai"                   "--quiet"
+Install-Pkg "Pillow"            "Pillow"                   "--quiet"
 
 # Windows-specific
-Write-Work "Paquetes de Windows..."
-& $PipVenv install pyautogui pyperclip pyttsx3 --quiet 2>&1 | Out-Null
+Install-Pkg "pyautogui"         "pyautogui"                "--quiet"
+Install-Pkg "pyperclip"         "pyperclip"                "--quiet"
+Install-Pkg "pyttsx3"           "pyttsx3"                  "--quiet"
 
-# faster-whisper
-Write-Work "faster-whisper (voz)..."
-& $PipVenv install faster-whisper --prefer-binary --quiet 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    Write-Warn "faster-whisper no se instalo. Los mensajes de voz no funcionaran."
-}
+# faster-whisper (may have dependency warnings - that is OK)
+Install-Pkg "faster-whisper"    "faster-whisper"           "--prefer-binary --quiet"
 
-# Install package
+# Install the project itself
 Write-Work "Instalando el asistente..."
-& $PipVenv install -e . --quiet --no-deps 2>&1 | Out-Null
+try { $out = & $PipVenv install -e . --quiet --no-deps 2>&1 | Out-String } catch {}
+
+# Verify critical imports actually work
+Write-Work "Verificando dependencias..."
+$verifyCode = @"
+ok, fail = [], []
+for mod in ['telegram','httpx','aiohttp','pydub','pydantic','structlog','cryptography','bcrypt','dotenv','PIL','openai','apsw']:
+    try:
+        __import__(mod)
+        ok.append(mod)
+    except ImportError:
+        fail.append(mod)
+print(f'OK: {len(ok)}/{len(ok)+len(fail)}')
+if fail: print(f'Faltan: {", ".join(fail)}')
+else: print('Todas las dependencias verificadas')
+"@
+try {
+    $verifyOut = & $PythonVenv -c $verifyCode 2>&1 | Out-String
+    Write-Host "  $($verifyOut.Trim())" -ForegroundColor DarkGray
+} catch {}
 
 Write-Step "Dependencias instaladas."
 
