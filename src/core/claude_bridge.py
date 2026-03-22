@@ -164,6 +164,15 @@ class ClaudeBridge:
 
     async def _oneshot(self, prompt, system_prompt, timeout, complex_task=False):
         max_turns = '200' if complex_task else '100'
+
+        # Calculate total command length to detect Windows limit
+        total_len = len(prompt) + len(system_prompt or '')
+
+        # On Windows, command line is limited to ~8KB. If the prompt + system_prompt
+        # is too long, use stdin pipe instead of command line arguments.
+        if _IS_WINDOWS and total_len > 6000:
+            return await self._oneshot_via_stdin(prompt, system_prompt, timeout, max_turns)
+
         cmd = [
             self._cli, '-p', prompt,
             '--output-format', 'text',
@@ -182,6 +191,42 @@ class ClaudeBridge:
         )
         try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            raise ClaudeBridgeError(f"Timed out after {timeout}s")
+
+        if proc.returncode != 0:
+            raise ClaudeBridgeError(f"CLI error: {stderr.decode()[:300]}")
+
+        return stdout.decode().strip()
+
+    async def _oneshot_via_stdin(self, prompt, system_prompt, timeout, max_turns):
+        """Fallback for Windows: send prompt via stdin to avoid command line length limit."""
+        # Combine prompt and system prompt into stdin
+        full_prompt = prompt
+        if system_prompt:
+            full_prompt = f"{system_prompt}\n\n---\n\nUser request:\n{prompt}"
+
+        cmd = [
+            self._cli, '-p', '-',
+            '--output-format', 'text',
+            '--max-turns', max_turns,
+            '--add-dir', self._install_dir,
+            '--permission-mode', 'bypassPermissions',
+        ]
+
+        proc = await self._create_subprocess(
+            cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(input=full_prompt.encode('utf-8')),
+                timeout=timeout,
+            )
         except asyncio.TimeoutError:
             proc.kill()
             await proc.wait()
