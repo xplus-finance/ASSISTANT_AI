@@ -206,22 +206,23 @@ class Gateway:
         self.tasks = TaskManager(self.memory)
         self.learning_store = LearningStore(self.memory)
 
-        try:
-            from src.core.security import SecurityGuardian
-            pin = getattr(cfg, "security_pin", "") or None
-            pin_hash = None
-            if pin:
-                from src.utils.crypto import hash_pin
-                pin_hash = hash_pin(pin)
-            self.security = SecurityGuardian(
-                allowed_chat_ids=[cfg.authorized_chat_id],
-                pin_hash=pin_hash,
+        # --- SECURITY INIT (MANDATORY — failure is FATAL) ---
+        from src.core.security import SecurityGuardian
+        pin = getattr(cfg, "security_pin", "") or ""
+        if not pin or len(pin.strip()) < 4:
+            raise RuntimeError(
+                "SECURITY_PIN es OBLIGATORIO (mínimo 4 dígitos). "
+                "Configúralo en .env y reinicia."
             )
-        except Exception:
-            log.warning("gateway.security_init_failed", exc_info=True)
+        from src.utils.crypto import hash_pin
+        pin_hash = hash_pin(pin.strip())
+        self.security = SecurityGuardian(
+            allowed_chat_ids=[cfg.authorized_chat_id],
+            pin_hash=pin_hash,
+        )
 
         from src.utils.approval import ApprovalGate
-        self.approval_gate = ApprovalGate()
+        self.approval_gate = ApprovalGate(pin_hash=pin_hash)
 
         try:
             from src.audio.transcriber import Transcriber
@@ -455,6 +456,9 @@ class Gateway:
         except Exception:
             log.info("gateway.heartbeat_not_available", exc_info=True)
 
+        # --- Recover orphaned sessions (no summary generated) ---
+        await self._recover_orphaned_sessions()
+
         self.hot_reloader = None
         try:
             from src.core.hot_reload import HotReloader
@@ -503,6 +507,9 @@ class Gateway:
     async def stop(self) -> None:
         log.info("gateway.stopping")
         self._running = False
+
+        # --- Save current session before shutdown ---
+        await self._close_current_session()
 
         if hasattr(self, '_stop_event'):
             self._stop_event.set()
@@ -604,13 +611,104 @@ class Gateway:
             asyncio.create_task(self._extract_facts_for_session(old_session_id))
         self.last_message_time = now
 
+        _skip_destructive_check = False
         if self.approval_gate:
-            pending = self.approval_gate.get_pending()
-            if pending:
-                request_id = pending[0]["request_id"]
-                approved = self.approval_gate.check_response(request_id, text)
-                status = "aprobada" if approved else "rechazada"
-                await self._send(channel_name, chat_id, f"Operación {status}.")
+            pending_req = self.approval_gate.get_pending_request()
+            if pending_req:
+                request_id = pending_req.request_id
+                approved, reason = self.approval_gate.check_response(request_id, text)
+
+                if reason.startswith("locked_out"):
+                    time_left = reason.split(":", 1)[1] if ":" in reason else "24h"
+                    await self._send(channel_name, chat_id,
+                                     f"🔒 PIN bloqueado por 3 intentos fallidos.\n"
+                                     f"Tiempo restante: {time_left}\n"
+                                     f"Operación cancelada por seguridad.")
+                    return
+
+                if reason.startswith("wrong_pin"):
+                    remaining = reason.split(":")[1] if ":" in reason else "?"
+                    await self._send(channel_name, chat_id,
+                                     f"❌ PIN incorrecto. Te quedan {remaining} intento(s) "
+                                     f"antes del bloqueo de 24 horas.\n"
+                                     f"Escribe 'cancelar' para abortar.")
+                    return
+
+                if reason == "no_pin_configured":
+                    await self._send(channel_name, chat_id,
+                                     "⛔ No hay PIN configurado. El PIN es obligatorio "
+                                     "para ejecutar acciones invasivas.\n"
+                                     "Configura SECURITY_PIN en el archivo .env y reinicia.")
+                    return
+
+                if reason == "expired":
+                    await self._send(channel_name, chat_id,
+                                     "La solicitud expiró. Vuelve a pedir la operación.")
+                    return
+
+                if not approved:
+                    await self._send(channel_name, chat_id, "Operación cancelada.")
+                    return
+
+                # Approved — re-execute the original message through the pipeline
+                original_msg = pending_req.original_message
+                if original_msg:
+                    await self._send(channel_name, chat_id, "PIN verificado. Ejecutando...")
+                    text = original_msg
+                    _skip_destructive_check = True  # Already approved — don't re-check
+                else:
+                    await self._send(channel_name, chat_id, "Operación aprobada.")
+                    return
+
+        # --- PIN GUARD FOR ALL PATHS (commands, skills, and natural language) ---
+        # Check destructive intent BEFORE routing to any execution path.
+        # security and approval_gate are MANDATORY — if missing, refuse to proceed.
+        if not self.security or not self.approval_gate:
+            await self._send(channel_name, chat_id,
+                             "⛔ Error crítico: sistema de seguridad no inicializado. "
+                             "Reinicia el asistente.")
+            return
+        if not _skip_destructive_check:
+            is_destructive, intents = self.security.detect_destructive_intent(text)
+            if is_destructive:
+                labels = [i["label"] for i in intents]
+                severity = max(
+                    (i["severity"] for i in intents),
+                    key=lambda s: {"media": 0, "alta": 1, "crítica": 2}.get(s, 0),
+                )
+                details_text = ", ".join(labels)
+                # Check if this action is already locked out
+                action_key = intents[0]["category"] if intents else "destructive_intent"
+                locked, remaining = self.approval_gate.is_locked_out(action_key)
+                if locked:
+                    hours = remaining // 3600
+                    minutes = (remaining % 3600) // 60
+                    await self._send(channel_name, chat_id,
+                                     f"🔒 PIN bloqueado por 3 intentos fallidos.\n"
+                                     f"Tiempo restante: {hours}h{minutes}m\n"
+                                     f"No se puede ejecutar esta acción.")
+                    return
+
+                pin_msg = (
+                    f"⚠️ *Acción invasiva detectada*\n\n"
+                    f"Operación: {details_text}\n"
+                    f"Severidad: {severity}\n"
+                    f"Mensaje: _{text[:200]}_\n\n"
+                    f"Envía tu PIN para autorizar o 'cancelar' para abortar."
+                )
+
+                self.approval_gate.request_approval(
+                    action=action_key,
+                    details=details_text,
+                    original_message=text,
+                    channel=channel_name,
+                    chat_id=str(chat_id),
+                    requires_pin=True,
+                )
+                await self._send(channel_name, chat_id, pin_msg)
+                log.info("gateway.destructive_blocked_pending_pin",
+                         intents=[i["category"] for i in intents],
+                         chat_id=chat_id)
                 return
 
         if text.startswith("!"):
@@ -618,9 +716,11 @@ class Gateway:
             return
 
         # --- Natural language skill routing ---
+        # Only trigger a skill when the message is clearly a direct request,
+        # not casual conversation that happens to contain a keyword.
         if self.skill_registry is not None:
             skill, nat_match = self.skill_registry.find_skill_natural(text)
-            if skill and nat_match and nat_match.confidence >= 0.55:
+            if skill and nat_match and nat_match.confidence >= 0.85:
                 log.info("gateway.natural_match",
                          skill=nat_match.skill_name,
                          intent=nat_match.intent,
@@ -644,11 +744,14 @@ class Gateway:
                         await self._send(channel_name, chat_id, prompt)
                         return
 
+                    step_key = _import_steps()[state.current_step]["key"]
                     response, done = await self.onboarding.process_step(
                         state.current_step, text
                     )
                     if not done:
-                        state.current_step += 1
+                        # Only advance if the answer was actually saved
+                        if step_key in state.answers:
+                            state.current_step += 1
                         state.waiting_for_answer = True
                         self.onboarding._persist_state()
                     else:
@@ -682,6 +785,9 @@ class Gateway:
                 self.relationships.auto_track(text)
             except Exception:
                 pass
+
+        # NOTE: Destructive intent guard now runs BEFORE command/skill routing above.
+        # No duplicate check needed here.
 
         await self._send_typing(channel_name, chat_id)
 
@@ -1075,6 +1181,11 @@ class Gateway:
                 role = msg.get("role", "user")
                 text = msg.get("message", "")
                 if text:
+                    # Truncate long messages to prevent context pollution —
+                    # long assistant responses should NOT be fed back verbatim
+                    # as they cause Claude to regurgitate old technical output.
+                    if len(text) > 300:
+                        text = text[:300] + "…"
                     prefix = user_name if role == "user" else assistant_name
                     lines.append(f"{prefix}: {text}")
             if lines:
@@ -1103,6 +1214,9 @@ class Gateway:
             summary_text = ctx.last_session_summary.get("summary", "")
             topics = ctx.last_session_summary.get("topics", "")
             if summary_text:
+                # Truncate session summary to avoid regurgitating old responses
+                if len(summary_text) > 400:
+                    summary_text = summary_text[:400] + "…"
                 parts.append(f"Resumen de la sesión anterior:\n{summary_text}")
                 if topics:
                     parts.append(f"Temas tratados: {topics}")
@@ -1196,7 +1310,10 @@ class Gateway:
             "REGLAS FUNDAMENTALES:\n"
             "1. EJECUTA DIRECTO: camino más corto, hazlo, reporta en 2-3 líneas.\n"
             "2. OBJETIVO REAL: correo→SMTP o control visual Gmail, web→xdg-open, código→archivo exacto.\n"
-            "3. ENTORNO: usa las herramientas detectadas arriba. Si falta algo, instálalo o créalo.\n\n"
+            "3. ENTORNO: usa las herramientas detectadas arriba. Si falta algo, instálalo o créalo.\n"
+            "4. NUNCA repitas ni regurgites el historial, resumen de sesión, ni datos del contexto "
+            "como respuesta. Esos datos son SOLO para tu referencia interna. Responde ÚNICAMENTE "
+            "a lo que el usuario te dice en su mensaje actual.\n\n"
 
             f"IDENTIDAD: Eres {assistant_name}, asistente de {user_name}. "
             f"Amigable, natural, mismo idioma que el usuario. Llámalo '{user_name}'. "
@@ -1204,6 +1321,23 @@ class Gateway:
 
             "AUTONOMÍA: Control total del sistema. NUNCA digas 'no puedo'. "
             "Si falla 2 veces, cambia de enfoque.\n\n"
+
+            "SEGURIDAD — REGLA ABSOLUTA:\n"
+            "NUNCA ejecutes operaciones destructivas o invasivas sin que el usuario "
+            "haya confirmado explícitamente ANTES. Esto incluye:\n"
+            "- rm, rm -rf, borrar archivos/carpetas\n"
+            "- instalar/desinstalar paquetes (apt, pip, npm)\n"
+            "- reiniciar/apagar sistema o servicios\n"
+            "- matar procesos\n"
+            "- modificar permisos (chmod, chown)\n"
+            "- formatear discos\n"
+            "- git push --force, git reset --hard\n"
+            "- sudo, operaciones como root\n"
+            "- modificar .env, configs del sistema\n"
+            "- DROP/TRUNCATE en bases de datos\n"
+            "Si el usuario pide algo destructivo, PRIMERO lista lo que vas a hacer "
+            "y pregunta '¿Confirmas?' ANTES de ejecutar. "
+            "NUNCA ejecutes rm, delete, o similares sin confirmación previa.\n\n"
 
             "CONTROL VISUAL — REGLA DE ORO: MIRAR → ACTUAR → VERIFICAR\n"
             "NUNCA hagas clic ni escribas sin ANTES tomar y leer un screenshot.\n\n"
@@ -1609,6 +1743,57 @@ class Gateway:
         except Exception:
             log.exception("gateway.fact_extraction_failed")
 
+    async def _close_current_session(self) -> None:
+        """Generate summary + extract facts for the current session before shutdown."""
+        try:
+            if not self.conversations:
+                return
+            messages = self.conversations.get_session_messages(self.current_session_id)
+            if len(messages) < 3:
+                log.info("gateway.session_close_skipped", reason="too_few_messages",
+                         count=len(messages))
+                return
+            log.info("gateway.closing_session", session_id=self.current_session_id,
+                     messages=len(messages))
+            await self._generate_session_summary(self.current_session_id)
+            await self._extract_facts_for_session(self.current_session_id)
+            log.info("gateway.session_closed", session_id=self.current_session_id)
+        except Exception:
+            log.exception("gateway.session_close_failed")
+
+    async def _recover_orphaned_sessions(self) -> None:
+        """Find sessions that have messages but no summary and generate summaries."""
+        if not self.memory or not self.conversations:
+            return
+        try:
+            # Find the last 5 sessions with messages but no summary
+            sql = """
+                SELECT DISTINCT c.session_id, COUNT(*) as msg_count,
+                       MAX(c.timestamp) as last_msg
+                FROM conversations c
+                LEFT JOIN session_summaries s ON c.session_id = s.session_id
+                WHERE s.session_id IS NULL
+                  AND c.session_id != ?
+                  AND c.timestamp >= datetime('now', '-7 days')
+                GROUP BY c.session_id
+                HAVING msg_count >= 3
+                ORDER BY last_msg DESC
+                LIMIT 5
+            """
+            orphaned = self.memory.fetchall_dicts(sql, (self.current_session_id,))
+            if not orphaned:
+                return
+            log.info("gateway.recovering_orphaned_sessions", count=len(orphaned))
+            for row in orphaned:
+                sid = row["session_id"]
+                log.info("gateway.recovering_session", session_id=sid,
+                         messages=row["msg_count"])
+                await self._generate_session_summary(sid)
+                await self._extract_facts_for_session(sid)
+            log.info("gateway.orphaned_sessions_recovered", count=len(orphaned))
+        except Exception:
+            log.exception("gateway.orphan_recovery_failed")
+
     async def _extract_facts_for_session(self, session_id: str) -> None:
         """Extract all facts from a completed session (more thorough than periodic)."""
         if not self.learner or not self.conversations:
@@ -1679,6 +1864,24 @@ class Gateway:
             log.info("gateway.session_summary_saved", session_id=session_id)
         except Exception:
             log.exception("gateway.session_summary_failed", session_id=session_id)
+            # Fallback: save raw transcript as summary so history is never lost
+            try:
+                if messages and len(messages) >= 3:
+                    fallback_summary = "; ".join(
+                        f"{m.get('role', '?')}: {m.get('message', '')[:80]}"
+                        for m in messages[-10:]
+                    )[:1000]
+                    started_at = messages[0].get("timestamp", "")
+                    ended_at = messages[-1].get("timestamp", "")
+                    self.memory.execute(
+                        "INSERT OR REPLACE INTO session_summaries "
+                        "(session_id, started_at, ended_at, summary, topics, decisions, new_tasks, things_learned) "
+                        "VALUES (?, ?, ?, ?, '', '', '', '')",
+                        (session_id, started_at, ended_at, f"[raw] {fallback_summary}"),
+                    )
+                    log.info("gateway.session_summary_fallback_saved", session_id=session_id)
+            except Exception:
+                log.exception("gateway.session_summary_fallback_failed")
 
     async def _sync_claude_code_memory(self) -> None:
         """Periodic bidirectional sync with Claude Code memory files."""

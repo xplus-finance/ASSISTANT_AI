@@ -264,6 +264,181 @@ class SecurityGuardian:
                 return False, f"Output contains sensitive data: {description}"
         return True, "Output clean"
 
+    # --- Destructive / invasive intent detection (natural language) ---
+
+    _DESTRUCTIVE_PATTERNS: list[tuple[re.Pattern, str]] = [
+        # Bang commands (!) that are inherently invasive
+        (re.compile(r"^!(terminal|shell|bash|sh|cmd)\b", re.IGNORECASE), "command_execute"),
+        (re.compile(r"^!skill\s+(crear|create|nuevo|new)\b", re.IGNORECASE), "script_create"),
+        (re.compile(r"^!mcp\s+(crear|create|nueva?|new|instalar|install)\b", re.IGNORECASE), "script_create"),
+        (re.compile(r"^!(code|proyecto)\b", re.IGNORECASE), "code_modify"),
+        (re.compile(r"^!(paquete|package|install|pip|npm)\s+(instalar|install|actualizar|update|upgrade)\b", re.IGNORECASE), "install"),
+        (re.compile(r"^!git\s+(commit|push|reset|clean|branch\s+-[dD])\b", re.IGNORECASE), "git_destructive"),
+        (re.compile(r"^!file\s+(escribir|write|delete|borrar|mover|move)\b", re.IGNORECASE), "file_overwrite"),
+        # Deletion / removal
+        (re.compile(r"(?i)\b(borr[aáeé]|elimin[aáeé]|borra(?:r|me|lo|la|los|las)?|elimina(?:r|me|lo|la)?|suprim[aáeé]|remov[eé]|delet[eé]|remove|rm\b|rmdir|unlink)", re.UNICODE), "delete"),
+        # Installation / uninstallation
+        (re.compile(r"(?i)\b(instala(?:r|me|lo)?|desinstala(?:r|me|lo)?|uninstall|apt\s+install|pip\s+install|npm\s+install|brew\s+install)", re.UNICODE), "install"),
+        # System control
+        (re.compile(r"(?i)\b(reinicia(?:r)?|apaga(?:r)?|reboot|shutdown|poweroff|halt|restart)", re.UNICODE), "system_control"),
+        # Process management
+        (re.compile(r"(?i)\b(mata(?:r|lo)?|kill(?:all)?|pkill|termina\s+(?:el\s+)?proceso)", re.UNICODE), "process_kill"),
+        # Permission / ownership changes
+        (re.compile(r"(?i)\b(chmod|chown|chgrp|cambia(?:r)?\s+permisos)", re.UNICODE), "permissions"),
+        # Disk / format operations
+        (re.compile(r"(?i)\b(formatea(?:r)?|format|mkfs|fdisk|parted|dd\s+if=)", re.UNICODE), "disk_format"),
+        # Service management
+        (re.compile(r"(?i)\b(systemctl\s+(?:stop|disable|restart|mask)|service\s+\S+\s+stop)", re.UNICODE), "service_control"),
+        # Network / firewall
+        (re.compile(r"(?i)\b(iptables|ufw\s+(?:disable|delete|reset)|firewall)", re.UNICODE), "firewall"),
+        # Git destructive
+        (re.compile(r"(?i)\b(git\s+(?:push\s+--force|reset\s+--hard|clean\s+-f|branch\s+-[dD]))", re.UNICODE), "git_destructive"),
+        # Sudo / privilege escalation
+        (re.compile(r"(?i)\b(sudo\b|su\s+-|como\s+root)", re.UNICODE), "privilege_escalation"),
+        # Cron / scheduled tasks (creation)
+        (re.compile(r"(?i)\b(crontab|programa(?:r|me)?\s+(?:una?\s+)?(?:tarea|alarma|cron)|crea(?:r|me)?\s+(?:una?\s+)?(?:tarea|alarma|recordatorio))", re.UNICODE), "scheduled_task"),
+        # Move / rename that could overwrite
+        (re.compile(r"(?i)\b(muev[eaá]|mover|mv\s|renombra(?:r)?|rename)", re.UNICODE), "move_rename"),
+        # Configuration changes
+        (re.compile(r"(?i)\b(modifica(?:r)?\s+(?:la\s+)?config|cambia(?:r)?\s+(?:la\s+)?config|edita(?:r)?\s+(?:el\s+)?\.env)", re.UNICODE), "config_change"),
+        # Database operations
+        (re.compile(r"(?i)\b(drop\s+(?:table|database|schema)|truncate\s|delete\s+from\b)", re.UNICODE), "database_destructive"),
+        # Docker destructive
+        (re.compile(r"(?i)\b(docker\s+(?:rm|rmi|prune|system\s+prune|stop|kill))", re.UNICODE), "docker_destructive"),
+        # File write / overwrite
+        (re.compile(r"(?i)\b(sobrescrib[eaí]|overwrite|reemplaza(?:r)?\s+(?:el\s+)?archivo|vacía(?:r)?|limpia(?:r)?\s+(?:el\s+)?(?:disco|carpeta|directorio|cache|caché))", re.UNICODE), "file_overwrite"),
+        # System update / upgrade
+        (re.compile(r"(?i)\b(actualiza(?:r)?\s+(?:el\s+)?sistema|upgrade\s+system|apt\s+(?:upgrade|dist-upgrade)|system\s+update)", re.UNICODE), "system_update"),
+        # Source code modification / rewrite
+        (re.compile(r"(?i)\b(modifica(?:r)?\s+(?:el\s+)?(?:código|code|script|archivo|file|src|source)|reescrib[eaí](?:r)?|rewrite|refactor(?:iza(?:r)?)?|cambia(?:r)?\s+(?:el\s+)?(?:código|code)|edita(?:r)?\s+(?:el\s+)?(?:código|code|script)|escrib[eaí](?:r)?\s+(?:el\s+)?(?:código|code)|implementa(?:r)?|agrega(?:r)?|añad[eaí](?:r)?|mete(?:le)?|pon(?:le|me|er)?|arregla(?:r)?|fix|corrig[eaí](?:r)?|mejora(?:r)?|optimiza(?:r)?|actualiza(?:r)?\s+(?:el\s+)?(?:código|code))", re.UNICODE), "code_modify"),
+        # Script / app / bot / skill / MCP creation
+        (re.compile(r"(?i)\b(crea(?:r|me)?\s+(?:un(?:a)?\s+)?(?:script|app|aplicación|bot|skill|función|function|clase|class|módulo|module|archivo|file|programa|herramienta|tool|servicio|server|servidor|mcp|api|endpoint|webhook|cron|daemon)|genera(?:r|me)?\s+(?:un(?:a)?\s+)?(?:script|app|aplicación|bot|skill|función|function|clase|class|módulo|module|archivo|file|programa|herramienta|tool|servicio|server|servidor|mcp|api|endpoint|webhook)|desarrolla(?:r|me)?|programa(?:r|me)?\s+(?:un(?:a)?\s+)?(?:script|app|bot|skill)|hazme\s+(?:un(?:a)?\s+)?(?:script|app|bot|skill|programa|herramienta|servicio))", re.UNICODE), "script_create"),
+        # Access to sensitive data (read .env, tokens, credentials, passwords)
+        (re.compile(r"(?i)\b(lee(?:r)?\s+(?:el\s+)?\.env|muestra(?:me)?\s+(?:las?\s+)?(?:contraseñas?|passwords?|tokens?|credenciales?|secretos?|api\s*keys?|llaves?)|ver\s+(?:las?\s+)?(?:contraseñas?|passwords?|tokens?|credenciales?|secretos?)|dame\s+(?:las?\s+)?(?:contraseñas?|passwords?|tokens?|credenciales?|secretos?)|extraer?\s+(?:las?\s+)?(?:contraseñas?|passwords?|tokens?|credenciales?)|cat\s+.*\.env|cat\s+.*\.pem|cat\s+.*id_rsa)", re.UNICODE), "sensitive_read"),
+        # Data export / send to external
+        (re.compile(r"(?i)\b(exporta(?:r|me)?\s+(?:los?\s+)?(?:datos?|base\s+de\s+datos|database|db|archivos?|memoria|conversations?)|env[ií]a(?:r)?\s+(?:los?\s+)?(?:datos?|archivos?|backup|respaldo)\s+(?:a|por|via)\b|sube?\s+(?:a|al)\s+(?:servidor|server|cloud|nube|github|drive|s3|ftp)|upload)", re.UNICODE), "data_export"),
+        # Environment variable modification
+        (re.compile(r"(?i)\b(cambia(?:r)?\s+(?:la\s+)?(?:variable|env|\.env)|modifica(?:r)?\s+(?:el\s+)?\.env|agrega(?:r)?\s+(?:variable|env)|set\s+\w+=|export\s+\w+=)", re.UNICODE), "env_modify"),
+        # Network scanning / reconnaissance
+        (re.compile(r"(?i)\b(escanea(?:r)?\s+(?:la\s+)?(?:red|puertos?|network)|port\s*scan|nmap|scan\s+(?:network|ports?|hosts?)|netstat|ss\s+-[tulpn]|tcpdump|wireshark|sniff)", re.UNICODE), "network_scan"),
+        # Clipboard access
+        (re.compile(r"(?i)\b(lee(?:r)?\s+(?:el\s+)?(?:portapapeles|clipboard)|copia(?:r)?\s+(?:del\s+)?(?:portapapeles|clipboard)|accede(?:r)?\s+(?:al\s+)?(?:portapapeles|clipboard)|xclip|xsel|pbpaste)", re.UNICODE), "clipboard_access"),
+        # SSH / remote access
+        (re.compile(r"(?i)\b(conect[aá](?:r|te)?\s+(?:por\s+)?ssh|ssh\s+\S|scp\s|rsync\s|sftp\s|acceso\s+remoto|remote\s+access|túnel|tunnel)", re.UNICODE), "remote_access"),
+        # Create folders / directories / generic files (filesystem modification)
+        (re.compile(r"(?i)\b(crea(?:r|me)?\s+(?:una?\s+)?(?:carpeta|directorio|folder|directory)|mkdir|nueva?\s+carpeta|nueva?\s+directorio)", re.UNICODE), "folder_create"),
+        (re.compile(r"(?i)\b(crea(?:r|me)?\s+(?:una?\s+)?(?:archivo|fichero|file)|touch\s|nueva?\s+archivo)", re.UNICODE), "file_create"),
+        # Copy files / directories
+        (re.compile(r"(?i)\b(copia(?:r|me)?\s+(?:el\s+|la\s+|los\s+|las\s+)?(?:archivo|carpeta|directorio|fichero|file|folder)|cp\s+-?r?\s|copy\s)", re.UNICODE), "file_copy"),
+        # Download files from internet
+        (re.compile(r"(?i)\b(descarga(?:r|me)?\s|download\s|wget\s|curl\s+-[oO]|baja(?:r|me)?\s+(?:el\s+|la\s+)?(?:archivo|file|imagen|image|video|pdf))", re.UNICODE), "download"),
+        # Compress / extract archives
+        (re.compile(r"(?i)\b(comprim[eaí](?:r)?\s|descomprim[eaí](?:r)?\s|extraer?\s|tar\s|unzip\s|zip\s|gzip\s|7z\s|rar\s)", re.UNICODE), "archive_operation"),
+        # Execute arbitrary code / eval
+        (re.compile(r"(?i)\b(ejecuta(?:r|me)?\s+(?:este\s+)?(?:código|code|comando|command|script)|corre(?:r)?\s+(?:este\s+)?(?:código|code|script)|run\s+(?:this\s+)?(?:code|script|command))", re.UNICODE), "command_execute"),
+        # User / account management
+        (re.compile(r"(?i)\b(crea(?:r)?\s+(?:un\s+)?(?:usuario|user|cuenta|account)|adduser|useradd|net\s+user)", re.UNICODE), "user_management"),
+    ]
+
+    _DESTRUCTIVE_SEVERITY: dict[str, str] = {
+        "delete": "alta",
+        "install": "media",
+        "system_control": "crítica",
+        "process_kill": "alta",
+        "permissions": "alta",
+        "disk_format": "crítica",
+        "service_control": "alta",
+        "firewall": "crítica",
+        "git_destructive": "alta",
+        "privilege_escalation": "alta",
+        "scheduled_task": "media",
+        "move_rename": "media",
+        "config_change": "media",
+        "database_destructive": "crítica",
+        "docker_destructive": "alta",
+        "file_overwrite": "alta",
+        "system_update": "media",
+        "command_execute": "alta",
+        "code_modify": "alta",
+        "script_create": "alta",
+        "sensitive_read": "crítica",
+        "data_export": "crítica",
+        "env_modify": "alta",
+        "network_scan": "alta",
+        "clipboard_access": "media",
+        "remote_access": "crítica",
+        "folder_create": "media",
+        "file_create": "media",
+        "file_copy": "media",
+        "download": "alta",
+        "archive_operation": "media",
+        "user_management": "crítica",
+    }
+
+    _DESTRUCTIVE_LABELS: dict[str, str] = {
+        "delete": "Borrar/eliminar archivos o datos",
+        "install": "Instalar/desinstalar software",
+        "system_control": "Reiniciar/apagar el sistema",
+        "process_kill": "Matar procesos",
+        "permissions": "Cambiar permisos del sistema",
+        "disk_format": "Formatear disco",
+        "service_control": "Detener/reiniciar servicios",
+        "firewall": "Modificar firewall/red",
+        "git_destructive": "Operación Git destructiva",
+        "privilege_escalation": "Escalación de privilegios (sudo)",
+        "scheduled_task": "Crear tarea/alarma programada",
+        "move_rename": "Mover/renombrar archivos",
+        "config_change": "Modificar configuración del sistema",
+        "database_destructive": "Operación destructiva en base de datos",
+        "docker_destructive": "Operación Docker destructiva",
+        "file_overwrite": "Sobrescribir/limpiar archivos",
+        "system_update": "Actualizar el sistema operativo",
+        "command_execute": "Ejecutar comando en terminal",
+        "code_modify": "Modificar/reescribir código fuente",
+        "script_create": "Crear script/app/bot/skill/MCP",
+        "sensitive_read": "Acceder a datos sensibles (contraseñas, tokens, .env)",
+        "data_export": "Exportar/enviar datos a destino externo",
+        "env_modify": "Modificar variables de entorno",
+        "network_scan": "Escaneo de red/puertos",
+        "clipboard_access": "Acceder al portapapeles",
+        "remote_access": "Acceso remoto SSH/SCP/SFTP",
+        "folder_create": "Crear carpeta/directorio",
+        "file_create": "Crear archivo",
+        "file_copy": "Copiar archivos/carpetas",
+        "download": "Descargar archivos de internet",
+        "archive_operation": "Comprimir/descomprimir archivos",
+        "user_management": "Gestión de usuarios del sistema",
+    }
+
+    def detect_destructive_intent(self, text: str) -> tuple[bool, list[dict[str, str]]]:
+        """Detect destructive/invasive intent in natural language.
+
+        Returns (is_destructive, list of {category, label, severity}).
+        """
+        if not text:
+            return False, []
+
+        matched: list[dict[str, str]] = []
+        seen_categories: set[str] = set()
+
+        for pattern, category in self._DESTRUCTIVE_PATTERNS:
+            if category in seen_categories:
+                continue
+            if pattern.search(text):
+                seen_categories.add(category)
+                matched.append({
+                    "category": category,
+                    "label": self._DESTRUCTIVE_LABELS.get(category, category),
+                    "severity": self._DESTRUCTIVE_SEVERITY.get(category, "media"),
+                })
+
+        if matched:
+            self._log.info("destructive_intent_detected",
+                           text_preview=text[:200],
+                           categories=[m["category"] for m in matched])
+
+        return bool(matched), matched
+
     def validate_file_access(self, path: str) -> tuple[bool, str]:
         if not path:
             return False, "Empty path"

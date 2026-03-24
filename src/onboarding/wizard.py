@@ -117,10 +117,11 @@ def _prompt_timezone(_answers: dict[str, str]) -> str:
 
 def _prompt_security_pin(_answers: dict[str, str]) -> str:
     return (
-        "\u00daltima pregunta \u2014 \u00bfquieres configurar un PIN "
-        "de seguridad? \U0001f512\n\n"
-        "Es una capa extra de protecci\u00f3n para operaciones sensibles. "
-        "Si no quieres, simplemente escribe 'no'."
+        "\u00daltima pregunta \u2014 configura tu PIN de seguridad \U0001f512\n\n"
+        "El PIN es OBLIGATORIO. Se te pedirá antes de ejecutar "
+        "cualquier acción invasiva: borrar archivos, modificar código, "
+        "instalar software, etc.\n\n"
+        "Escribe un PIN numérico (mínimo 4 dígitos):"
     )
 
 
@@ -204,11 +205,15 @@ class OnboardingWizard:
         key = step_def["key"]
 
         if key == "security_pin":
-            normalized = response.lower().strip()
-            if normalized in ("no", "n", "omitir", "skip", ""):
-                self._state.answers[key] = ""
-            else:
-                self._state.answers[key] = hash_pin(response)
+            cleaned = response.strip()
+            # PIN is mandatory — must be at least 4 digits
+            if not cleaned or len(cleaned) < 4:
+                return (
+                    "⚠️ El PIN es obligatorio y debe tener mínimo 4 dígitos.\n"
+                    "Escribe tu PIN numérico:",
+                    False,
+                )
+            self._state.answers[key] = hash_pin(cleaned)
         else:
             clean_value = await self._extract_clean_value(key, response)
             self._state.answers[key] = clean_value

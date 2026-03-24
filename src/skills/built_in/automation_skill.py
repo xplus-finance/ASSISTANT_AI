@@ -352,14 +352,14 @@ class AutomationSkill(BaseSkill):
                 r"av[ií]same\s+(?:cuando|que|para)\s+(?P<args>.+)",
             ],
             "nuevo": [
-                r"(?:automatiza|programa|agenda)\s+(?:que\s+)?(?P<args>.+)",
-                r"(?:crea|hazme)\s+(?:una?\s+)?automatizaci[oó]n(?:\s+(?:de|para|que)\s+(?P<args>.+))?",
+                r"(?:automatiza|agenda)\s+(?:que\s+)?(?P<args>.+)",
+                r"(?:programa|crea|hazme)\s+(?:una?\s+)?(?:automatizaci[oó]n|cron)(?:\s+(?:de|para|que)\s+(?P<args>.+))?",
                 r"cada\s+(?:d[ií]a|lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|hora|\d+\s*(?:min|hora|h|m))\s+(?P<args>.+)",
             ],
             "ver": [
                 r"(?:mu[eé]strame|ver|dame|cu[aá]les?)\s+(?:las?\s+|mis?\s+)?automatizaciones?",
                 r"(?:qu[eé]|cu[aá]les?)\s+(?:tengo|hay)\s+programado",
-                r"(?:mis?\s+)?(?:crons?|tareas?\s+programadas?|automatizaciones?)",
+                r"(?:mis?\s+)?(?:crons?|automatizaciones?)",
             ],
             "pendientes": [
                 r"(?:qu[eé]|cu[aá]les?)\s+(?:recordatorios?|automaciones?)\s+(?:tengo\s+)?pendientes?",

@@ -887,33 +887,31 @@ step_done "9" "Zona horaria configurada"
 # ============================================================================
 step_header "10" "Seguridad"
 
-echo -e "  ${DIM}Puedes proteger tu asistente con un PIN de seguridad.${NC}"
-echo -e "  ${DIM}Si lo activas, te pedirá el PIN antes de ejecutar${NC}"
-echo -e "  ${DIM}operaciones sensibles (borrar archivos, cambiar config, etc.)${NC}"
+echo -e "  ${BOLD}${YELLOW}El PIN de seguridad es OBLIGATORIO.${NC}"
+echo -e "  ${DIM}Se pedirá antes de ejecutar cualquier acción invasiva:${NC}"
+echo -e "  ${DIM}borrar archivos, modificar código, instalar software, etc.${NC}"
+echo -e "  ${DIM}3 intentos fallidos = bloqueo de 24 horas (anti brute-force).${NC}"
 echo ""
-echo -e "  ${DIM}Es opcional pero recomendado si compartes la computadora.${NC}"
-echo ""
-ask "Escribe un PIN (4-8 dígitos) o presiona ${BOLD}Enter${NC} para omitir: "
-read -r SEC_PIN
 
-if [[ -n "$SEC_PIN" ]]; then
-    if [[ "$SEC_PIN" =~ ^[0-9]{4,8}$ ]]; then
-        _sed_i "s|^SECURITY_PIN=.*|SECURITY_PIN=$SEC_PIN|" "$ENV_FILE"
-        info "PIN de seguridad configurado. 🔒"
-    else
-        warn "El PIN debe ser de 4 a 8 dígitos numéricos."
-        ask "Inténtalo de nuevo (o Enter para omitir): "
-        read -r SEC_PIN
-        if [[ "$SEC_PIN" =~ ^[0-9]{4,8}$ ]]; then
-            _sed_i "s|^SECURITY_PIN=.*|SECURITY_PIN=$SEC_PIN|" "$ENV_FILE"
-            info "PIN de seguridad configurado. 🔒"
-        else
-            info "PIN omitido. Puedes configurarlo después en el archivo .env"
-        fi
+SEC_PIN=""
+while [[ -z "$SEC_PIN" ]]; do
+    ask "Escribe un PIN (mínimo 4 dígitos): "
+    read -r SEC_PIN
+
+    if [[ -z "$SEC_PIN" ]]; then
+        warn "El PIN es obligatorio. El sistema no arranca sin él."
+        continue
     fi
-else
-    info "PIN omitido. Puedes agregarlo después en el archivo .env"
-fi
+
+    if [[ ! "$SEC_PIN" =~ ^.{4,}$ ]]; then
+        warn "El PIN debe tener mínimo 4 caracteres."
+        SEC_PIN=""
+        continue
+    fi
+done
+
+_sed_i "s|^SECURITY_PIN=.*|SECURITY_PIN=$SEC_PIN|" "$ENV_FILE"
+info "PIN de seguridad configurado. 🔒"
 
 echo ""
 

@@ -108,7 +108,7 @@ class NotesSkill(BaseSkill):
             "nueva": [
                 r"(?:anota|apunta|escribe|guarda)\s+(?:una?\s+)?(?:nota|apunte)?\s*(?:que\s+)?(?P<args>.+)",
                 r"(?:nueva|crear?)\s+nota(?:\s+(?:sobre|de|que)\s+(?P<args>.+))?",
-                r"(?:toma\s+)?nota\s+(?:de\s+)?(?:que\s+)?(?P<args>.+)",
+                r"toma\s+nota\s+(?:de\s+)?(?:que\s+)?(?P<args>.+)",
             ],
             "buscar": [
                 r"busca(?:r|me)?\s+(?:en\s+)?(?:mis?\s+)?notas?\s+(?P<args>.+)",

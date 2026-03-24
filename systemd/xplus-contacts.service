@@ -6,9 +6,9 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-User=orlando
-WorkingDirectory=/tmp/ASSISTANT_AI
-ExecStart=/usr/bin/python3 -m src.apps.contacts.server
+User=%INSTALL_USER%
+WorkingDirectory=%PROJECT_DIR%
+ExecStart=%PROJECT_DIR%/.venv/bin/python -m src.apps.contacts.server
 Restart=on-failure
 RestartSec=3
 Environment=PYTHONUNBUFFERED=1

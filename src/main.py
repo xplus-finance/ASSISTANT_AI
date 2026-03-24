@@ -93,6 +93,15 @@ async def main() -> None:
         )
         sys.exit(1)
 
+    if not settings.security_pin or len(settings.security_pin.strip()) < 4:
+        print(
+            "[FATAL] SECURITY_PIN es OBLIGATORIO.\n"
+            "Configura SECURITY_PIN en el archivo .env con mínimo 4 dígitos.\n"
+            "Sin PIN el sistema no puede arrancar por seguridad.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     from src.utils.logger import setup_logging
     setup_logging(settings.log_level)
 

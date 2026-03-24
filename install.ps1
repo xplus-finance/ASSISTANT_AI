@@ -465,15 +465,19 @@ if (-not $skipEnv) {
 
     Write-Header "10" "Seguridad"
 
-    Write-Host "  PIN de seguridad (4-8 digitos, opcional)." -ForegroundColor DarkGray
+    Write-Host "  El PIN de seguridad es OBLIGATORIO." -ForegroundColor Yellow
+    Write-Host "  Se pide antes de cualquier accion invasiva." -ForegroundColor DarkGray
+    Write-Host "  3 intentos fallidos = bloqueo de 24 horas." -ForegroundColor DarkGray
     Write-Host ""
-    $secPin = Ask-Input "PIN (Enter para omitir)"
-    if ($secPin -match "^\d{4,8}$") {
-        Update-EnvVar "SECURITY_PIN" $secPin
-        Write-Step "PIN configurado."
-    } else {
-        Write-Step "PIN omitido."
+    $secPin = ""
+    while (-not $secPin -or $secPin.Length -lt 4) {
+        $secPin = Ask-Input "PIN (minimo 4 digitos, OBLIGATORIO)"
+        if (-not $secPin -or $secPin.Length -lt 4) {
+            Write-Host "  El PIN es obligatorio y debe tener minimo 4 caracteres." -ForegroundColor Red
+        }
     }
+    Update-EnvVar "SECURITY_PIN" $secPin
+    Write-Step "PIN configurado."
 
     Write-Work "Generando clave de cifrado..."
     $dbKey = & $PythonVenv -c "import secrets; print(secrets.token_hex(32))" 2>&1

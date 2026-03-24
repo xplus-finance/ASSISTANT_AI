@@ -6,10 +6,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=ai-assistant
-Group=ai-assistant
-WorkingDirectory=/opt/ai-assistant
-ExecStart=/usr/bin/python3 -m src.main
+# install.sh replaces these placeholders
+User=%INSTALL_USER%
+Group=%INSTALL_USER%
+WorkingDirectory=%PROJECT_DIR%
+ExecStart=%PROJECT_DIR%/.venv/bin/python -m src.main
 Restart=always
 RestartSec=10
 TimeoutStopSec=30
@@ -19,7 +20,7 @@ TimeoutStopSec=30
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/opt/ai-assistant/data /opt/ai-assistant/logs /opt/ai-assistant/models /opt/ai-assistant/src /opt/ai-assistant/skills /opt/ai-assistant/mcps /opt/ai-assistant/.backups /tmp
+ReadWritePaths=%PROJECT_DIR%/data /opt/ai-assistant/logs /opt/ai-assistant/models /opt/ai-assistant/src /opt/ai-assistant/skills /opt/ai-assistant/mcps /opt/ai-assistant/.backups /tmp
 PrivateTmp=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
@@ -47,7 +48,7 @@ LimitNOFILE=4096
 
 # -- Environment --
 
-EnvironmentFile=/opt/ai-assistant/.env
+EnvironmentFile=%PROJECT_DIR%/.env
 
 # -- Logging --
 

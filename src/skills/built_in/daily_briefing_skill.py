@@ -40,15 +40,8 @@ class DailyBriefingSkill(BaseSkill):
     def natural_patterns(self) -> dict[str, list[str]]:
         return {
             "briefing": [
-                r"(?:dame|quiero|hazme|mu[eé]strame)\s+(?:el\s+)?resumen(?:\s+del\s+d[ií]a)?",
-                r"(?:c[oó]mo|qu[eé])\s+(?:est[aá]|hay)\s+(?:el\s+)?d[ií]a",
-                r"buenos?\s+d[ií]as?",
-                r"good\s+morning",
-                r"(?:qu[eé]|cu[aá]les?)\s+(?:tengo|hay)\s+pendiente",
-                r"resumen\s+(?:del\s+)?d[ií]a",
-                r"resumen\s+diario",
+                r"(?:dame|quiero|hazme|mu[eé]strame|genera)\s+(?:el\s+)?(?:resumen|briefing)(?:\s+del\s+d[ií]a)?",
                 r"(?:dame|quiero)\s+(?:mi\s+)?briefing",
-                r"(?:qu[eé]\s+hay\s+(?:de\s+)?nuevo|novedades)",
                 r"(?:ponte|ponme)\s+al\s+d[ií]a",
             ],
         }
@@ -60,9 +53,6 @@ class DailyBriefingSkill(BaseSkill):
             "!resumen",
             "!buenos dias",
             "!good morning",
-            "briefing",
-            "resumen del dia",
-            "resumen diario",
         ]
 
     async def execute(self, args: str, context: dict[str, Any]) -> SkillResult:
