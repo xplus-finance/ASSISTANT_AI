@@ -67,12 +67,24 @@ def _backup_file(filepath: str) -> str | None:
         return None
 
 
+_shutdown_requested = threading.Event()
+
+
+def get_shutdown_event() -> threading.Event:
+    """Return the shutdown event so the gateway can monitor it for drain."""
+    return _shutdown_requested
+
+
 def restart_process() -> None:
 
     log.info("hot_reload.restarting_process")
 
-    # Give a moment for logs to flush
-    time.sleep(0.5)
+    # Signal shutdown so gateway stops accepting new requests
+    _shutdown_requested.set()
+
+    # Wait up to 3 seconds for in-flight requests to drain
+    log.info("hot_reload.draining_requests", max_wait_seconds=3)
+    time.sleep(3)
 
     python = sys.executable
     args = [python, "-m", "src.main"]

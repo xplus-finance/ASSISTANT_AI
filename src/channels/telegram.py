@@ -8,10 +8,11 @@ import os
 import tempfile
 from pathlib import Path
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction, ParseMode
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     ContextTypes,
     MessageHandler as TGMessageHandler,
     filters,
@@ -56,6 +57,7 @@ class TelegramChannel(Channel):
                 self._handle_message,
             )
         )
+        self._app.add_handler(CallbackQueryHandler(self._handle_callback_query))
 
         await self._app.initialize()
         await self._app.start()
@@ -205,6 +207,68 @@ class TelegramChannel(Channel):
                 sender_id,
             )
 
+    async def edit_text(
+        self, chat_id: str | int, message_id: int, text: str, parse_mode: str = "Markdown",
+    ) -> bool:
+        if self._app is None:
+            return False
+        try:
+            await self._app.bot.edit_message_text(
+                chat_id=int(chat_id), message_id=message_id,
+                text=text, parse_mode=parse_mode,
+            )
+            return True
+        except Exception as exc:
+            if "message is not modified" in str(exc).lower():
+                return True  # content already matches
+            logger.warning("telegram.edit_text_failed: %s", exc)
+            return False
+
+    async def send_text_with_buttons(
+        self,
+        chat_id: str | int,
+        text: str,
+        buttons: list[list[tuple[str, str]]],
+        parse_mode: str = "Markdown",
+    ) -> int | None:
+        if self._app is None:
+            return None
+        keyboard = [
+            [InlineKeyboardButton(label, callback_data=data) for label, data in row]
+            for row in buttons
+        ]
+        try:
+            msg = await self._app.bot.send_message(
+                chat_id=int(chat_id), text=text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode=parse_mode,
+            )
+            return msg.message_id
+        except Exception:
+            msg = await self._app.bot.send_message(
+                chat_id=int(chat_id), text=text,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+            return msg.message_id
+
+    async def _handle_callback_query(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        query = update.callback_query
+        if query is None:
+            return
+        await query.answer()
+        chat_id = str(query.message.chat_id) if query.message else "0"
+        sender_id = str(query.from_user.id) if query.from_user else chat_id
+        incoming = IncomingMessage(
+            chat_id=chat_id, sender_id=sender_id,
+            text=query.data, audio_path=None, image_path=None,
+            document_path=None, message_type="callback",
+            channel="telegram", raw=update,
+        )
+        if self._handler is not None:
+            await self._handler(incoming)
+
     @staticmethod
     def _split_text(text: str) -> list[str]:
         if len(text) <= _MAX_TEXT_LENGTH:
@@ -218,9 +282,18 @@ class TelegramChannel(Channel):
                 chunks.append(remaining)
                 break
 
-            split_at = remaining.rfind("\n", 0, _MAX_TEXT_LENGTH)
-            if split_at == -1:
-                split_at = remaining.rfind(" ", 0, _MAX_TEXT_LENGTH)
+            # Try splitting at double newline, then single newline, then space
+            split_at = -1
+            for sep in ("\n\n", "\n", " "):
+                candidate = remaining.rfind(sep, 0, _MAX_TEXT_LENGTH)
+                if candidate == -1:
+                    continue
+                # Don't split inside a code block (count ``` fences)
+                fence_count = remaining[:candidate].count("```")
+                if fence_count % 2 == 0:  # even = outside code block
+                    split_at = candidate
+                    break
+
             if split_at == -1:
                 split_at = _MAX_TEXT_LENGTH
 

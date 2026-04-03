@@ -118,7 +118,24 @@ class SkillRegistry:
             self.register(skill)
             log.info("registry.hot_reloaded", skill=skill.name)
 
+    def _check_trigger_conflicts(self, skill: BaseSkill) -> None:
+        """Warn if new skill has triggers that overlap with existing skills."""
+        new_triggers = set(skill.triggers)
+        with self._lock:
+            for name, existing in self._skills.items():
+                if name == skill.name:
+                    continue
+                overlap = new_triggers & set(existing.triggers)
+                if overlap:
+                    log.warning(
+                        "registry.trigger_conflict",
+                        new_skill=skill.name,
+                        existing_skill=name,
+                        overlapping_triggers=sorted(overlap),
+                    )
+
     def register(self, skill: BaseSkill) -> None:
+        self._check_trigger_conflicts(skill)
         with self._lock:
             replacing = skill.name in self._skills
             self._skills[skill.name] = skill

@@ -47,3 +47,20 @@ class Channel(ABC):
 
     @abstractmethod
     def set_message_handler(self, handler: MessageHandler) -> None: ...
+
+    async def edit_text(
+        self, chat_id: str | int, message_id: int, text: str, parse_mode: str = "Markdown",
+    ) -> bool:
+        """Edit a previously sent message. Returns False if not supported."""
+        return False
+
+    async def send_text_with_buttons(
+        self,
+        chat_id: str | int,
+        text: str,
+        buttons: list[list[tuple[str, str]]],
+        parse_mode: str = "Markdown",
+    ) -> int | None:
+        """Send text with inline buttons. Falls back to plain text if not supported."""
+        await self.send_text(str(chat_id), text)
+        return None

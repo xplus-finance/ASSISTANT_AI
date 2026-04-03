@@ -54,6 +54,12 @@ class BaseSkill(ABC):
     @abstractmethod
     async def execute(self, args: str, context: dict[str, Any]) -> SkillResult: ...
 
+    @property
+    def help_text(self) -> str:
+        """Auto-generated help from name, description and triggers."""
+        triggers_str = ", ".join(f"`{t}`" for t in self.triggers)
+        return f"**{self.name}** — {self.description}\nTriggers: {triggers_str}"
+
     def matches(self, text: str) -> bool:
         text_lower = text.lower().strip()
         return any(text_lower.startswith(t) for t in self.triggers)

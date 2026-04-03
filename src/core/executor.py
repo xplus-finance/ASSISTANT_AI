@@ -99,8 +99,6 @@ class SandboxedExecutor:
             "--ro-bind", "/usr", "/usr",
             "--ro-bind", "/bin", "/bin",
             "--ro-bind", "/lib", "/lib",
-            "--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf",
-            "--ro-bind", "/etc/ssl/certs", "/etc/ssl/certs",
             "--bind", workspace, "/workspace",
             "--die-with-parent",
             "--new-session",
@@ -114,6 +112,11 @@ class SandboxedExecutor:
 
         if allow_network:
             bwrap_args.append("--share-net")
+            # DNS and SSL only needed when network is allowed
+            if Path("/etc/resolv.conf").exists():
+                bwrap_args.extend(["--ro-bind", "/etc/resolv.conf", "/etc/resolv.conf"])
+            if Path("/etc/ssl/certs").exists():
+                bwrap_args.extend(["--ro-bind", "/etc/ssl/certs", "/etc/ssl/certs"])
 
         bwrap_args.extend([
             "/bin/sh", "-c",
