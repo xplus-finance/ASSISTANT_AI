@@ -41,6 +41,10 @@ class ClaudeBridgeError(Exception):
 
 
 class ClaudeBridge:
+    # Exponential backoff constants for persistent session recovery
+    _BACKOFF_BASE_SECS = 5.0
+    _BACKOFF_MAX_SECS = 300.0  # 5 minutes
+
     def __init__(self, cli_path="claude", default_timeout=1200):
         self._cli = _resolve_claude_path(cli_path)
         self._default_timeout = default_timeout
@@ -50,6 +54,13 @@ class ClaudeBridge:
         self._process = None
         self._session_active = False
         self._lock = asyncio.Lock()  # Serialize requests to the session
+
+        # Exponential backoff state for persistent session retries
+        # Tracks when it is safe to attempt restarting the persistent session
+        # after a failure.  No background thread — the delay is only applied
+        # inside ask() when choosing between session and one-shot mode.
+        self._session_fail_count: int = 0
+        self._session_retry_after: float = 0.0  # monotonic timestamp
 
     @staticmethod
     async def _create_subprocess(cmd: list[str], **kwargs):
@@ -78,6 +89,9 @@ class ClaudeBridge:
             stderr=asyncio.subprocess.PIPE,
         )
         self._session_active = True
+        # Successful start — reset backoff counters
+        self._session_fail_count = 0
+        self._session_retry_after = 0.0
         log.info("claude_bridge.session_started", pid=self._process.pid)
 
     async def stop_session(self):
@@ -92,6 +106,24 @@ class ClaudeBridge:
         self._process = None
         log.info("claude_bridge.session_stopped")
 
+    def _record_session_failure(self) -> None:
+        """Update backoff state after a persistent session failure."""
+        self._session_fail_count += 1
+        delay = min(
+            self._BACKOFF_BASE_SECS * (2 ** (self._session_fail_count - 1)),
+            self._BACKOFF_MAX_SECS,
+        )
+        self._session_retry_after = time.monotonic() + delay
+        log.warning(
+            "claude_bridge.session_backoff",
+            fail_count=self._session_fail_count,
+            retry_in_secs=delay,
+        )
+
+    def _session_allowed(self) -> bool:
+        """Return True if the backoff window has elapsed and a session attempt is permitted."""
+        return time.monotonic() >= self._session_retry_after
+
     async def ask(self, prompt, system_prompt="", timeout=None, complex_task=False):
         timeout = timeout or self._default_timeout
         if complex_task:
@@ -99,11 +131,22 @@ class ClaudeBridge:
 
         async with self._lock:
             try:
-                if self._session_active and self._process and self._process.returncode is None:
-                    return await self._send_to_session(prompt, system_prompt, timeout)
+                session_ready = (
+                    self._session_active
+                    and self._process
+                    and self._process.returncode is None
+                    and self._session_allowed()
+                )
+                if session_ready:
+                    result = await self._send_to_session(prompt, system_prompt, timeout)
+                    # Successful exchange — reset backoff
+                    self._session_fail_count = 0
+                    self._session_retry_after = 0.0
+                    return result
             except asyncio.CancelledError:
                 raise  # No swallowear — tarea cancelada externamente
             except Exception:
+                self._record_session_failure()
                 log.warning("claude_bridge.session_failed_using_oneshot", exc_info=True)
 
             return await self._oneshot(prompt, system_prompt, timeout, complex_task=complex_task)

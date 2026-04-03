@@ -42,7 +42,7 @@ Usa `winget` para dependencias como ffmpeg y crea `start.bat` para iniciar con d
 7. Configura modelo de reconocimiento de voz (faster-whisper) con opcion de descarga inmediata
 8. Configura mascota de escritorio (5 opciones: perro, gato, robot, zorro, buho) — instala PyQt6 y libxcb-cursor0 automaticamente
 9. Configura zona horaria
-10. Configura seguridad: PIN opcional y clave de cifrado para la base de datos
+10. Configura seguridad: PIN obligatorio (minimo 4 caracteres) y clave de cifrado para la base de datos
 11. Crea directorios de datos y ofrece inicio automatico (systemd en Linux, launchd en macOS, Task Scheduler en Windows)
 
 El instalador es idempotente. Si ya existe un `.env`, ofrece reconfigurarlo con backup automatico.
@@ -67,7 +67,7 @@ Doble clic en `start.bat` o desde PowerShell:
 .venv\Scripts\python.exe -m src.main
 ```
 
-`start.bat` hace `git pull` automatico al arrancar.
+`start.bat` notifica si hay actualizaciones disponibles (no actualiza automaticamente).
 
 ---
 
@@ -217,9 +217,9 @@ SISTEMA
 | Autenticacion | Chat ID de Telegram o numero autorizado de WhatsApp |
 | PIN | Hash bcrypt para operaciones sensibles |
 | Sanitizacion | Validacion de comandos, path traversal prevention, FTS5 sanitization |
-| Prompt injection | 28 patrones regex, registro en audit log |
+| Prompt injection | 30+ patrones regex, registro en audit log |
 | Escaneo de salida | Deteccion de tokens, keys y passwords antes de enviar |
-| Rate limiting | Limite configurable de mensajes por minuto |
+| Rate limiting | Limite configurable por severidad de accion |
 | Permisos | `.env` (600), `data/` (700), `logs/` (700) — automatico al arrancar (Linux/macOS) |
 | Sandbox | bubblewrap (Linux), subprocess con timeout (Windows/macOS) |
 
@@ -234,7 +234,10 @@ El asistente mejora con cada interaccion:
 3. **Patrones de exito**: acumula los mejores metodos por tipo de tarea y los aplica automaticamente
 4. **Errores memorizados**: registra errores y sus soluciones para no repetirlos
 5. **Deduplicacion**: si extrae un hecho que ya existe, refuerza el existente en vez de duplicar
-6. **Contexto enriquecido**: el prompt incluye automaticamente historial de ejecuciones similares, estadisticas de exito, y errores conocidos a evitar
+6. **Contexto enriquecido**: el prompt incluye automaticamente historial de ejecuciones similares, estadisticas de exito, y errores conocidos a evitar — con presupuesto de tokens para no exceder el contexto
+7. **Ponderacion temporal**: hechos recientes pesan mas. Conocimiento no accedido en 30+ dias pierde relevancia gradualmente
+8. **Correcciones**: si dices "eso esta mal", el hecho original se marca obsoleto y se reemplaza por la correccion
+9. **Fuente de origen**: cada hecho registra de donde vino (conversacion, web, correccion del usuario)
 
 ---
 
@@ -281,8 +284,8 @@ journalctl -u ai-assistant -f
 ### macOS (launchd)
 
 ```bash
-cp launchd/com.assistant.ai.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.assistant.ai.plist
+cp launchd/com.personal-ai-assistant.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.personal-ai-assistant.plist
 ```
 
 ### Windows (Task Scheduler)

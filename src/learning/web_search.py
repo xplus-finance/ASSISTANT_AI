@@ -5,6 +5,8 @@ from __future__ import annotations
 import ipaddress
 import re
 import socket
+import time
+from collections import OrderedDict
 from dataclasses import dataclass
 from urllib.parse import quote_plus, urlparse
 
@@ -26,6 +28,8 @@ _DEFAULT_HEADERS = {
 
 _FETCH_TIMEOUT = 30.0  # seconds
 _SEARCH_TIMEOUT = 20.0
+_CACHE_TTL_SECS = 3600.0  # 1 hour
+_CACHE_MAX_ENTRIES = 100
 
 
 def _is_safe_url(url: str) -> bool:
@@ -58,9 +62,41 @@ class SearchResult:
 
 class WebSearcher:
 
-
     def __init__(self, timeout: float = _SEARCH_TIMEOUT) -> None:
         self._timeout = timeout
+        # In-memory LRU cache: key -> (result, inserted_at)
+        # Shared for both search results (key = "search:<query>:<max>") and
+        # fetched pages (key = "page:<url>").  Max 100 entries, 1-hour TTL.
+        self._cache: OrderedDict[str, tuple[object, float]] = OrderedDict()
+
+    # ------------------------------------------------------------------
+    # Cache helpers
+    # ------------------------------------------------------------------
+
+    def _cache_get(self, key: str) -> object | None:
+        """Return cached value if present and not expired, else None."""
+        entry = self._cache.get(key)
+        if entry is None:
+            return None
+        value, inserted_at = entry
+        if time.monotonic() - inserted_at > _CACHE_TTL_SECS:
+            del self._cache[key]
+            return None
+        # Move to end (most-recently-used)
+        self._cache.move_to_end(key)
+        return value
+
+    def _cache_set(self, key: str, value: object) -> None:
+        """Store value in cache, evicting the oldest entry when full."""
+        if key in self._cache:
+            self._cache.move_to_end(key)
+        self._cache[key] = (value, time.monotonic())
+        if len(self._cache) > _CACHE_MAX_ENTRIES:
+            self._cache.popitem(last=False)
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     async def search(
         self,
@@ -68,6 +104,13 @@ class WebSearcher:
         max_results: int = 5,
     ) -> list[SearchResult]:
         max_results = min(max_results, 25)
+
+        cache_key = f"search:{query}:{max_results}"
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            log.debug("web_search.cache_hit", query=query)
+            return cached  # type: ignore[return-value]
+
         log.info("web_search.searching", query=query, max_results=max_results)
 
         try:
@@ -85,9 +128,17 @@ class WebSearcher:
             log.error("web_search.request_failed", error=str(exc))
             return []
 
-        return self._parse_results(resp.text, max_results)
+        results = self._parse_results(resp.text, max_results)
+        self._cache_set(cache_key, results)
+        return results
 
     async def fetch_page(self, url: str) -> str:
+        cache_key = f"page:{url}"
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            log.debug("web_search.page_cache_hit", url=url)
+            return cached  # type: ignore[return-value]
+
         log.debug("web_search.fetching_page", url=url)
 
         if not _is_safe_url(url):
@@ -111,7 +162,9 @@ class WebSearcher:
             log.debug("web_search.non_html_content", url=url, content_type=content_type)
             return ""
 
-        return self._extract_text(resp.text)
+        text = self._extract_text(resp.text)
+        self._cache_set(cache_key, text)
+        return text
 
     @staticmethod
     def _parse_results(html: str, max_results: int) -> list[SearchResult]:

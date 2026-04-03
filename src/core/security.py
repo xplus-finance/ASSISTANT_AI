@@ -221,11 +221,17 @@ class SecurityGuardian:
         if not command or not command.strip():
             return False, "Empty command"
         cmd_lower = command.lower().strip()
+        # Split command into tokens for precise matching (avoids "rm" matching "trim")
+        cmd_tokens = cmd_lower.split()
         for blocked in BLOCKED_COMMANDS:
-            if blocked.lower() in cmd_lower:
-                reason = f"Blocked command detected: '{blocked}'"
-                self._log.warning("blocked_command", command=command[:200], blocked_pattern=blocked)
-                return False, reason
+            blocked_lower = blocked.lower()
+            blocked_tokens = blocked_lower.split()
+            # Check if blocked tokens appear as a contiguous subsequence
+            for i in range(len(cmd_tokens) - len(blocked_tokens) + 1):
+                if cmd_tokens[i:i + len(blocked_tokens)] == blocked_tokens:
+                    reason = f"Blocked command detected: '{blocked}'"
+                    self._log.warning("blocked_command", command=command[:200], blocked_pattern=blocked)
+                    return False, reason
         for pattern, description in _COMPILED_FORBIDDEN:
             if pattern.search(command):
                 reason = f"Forbidden pattern: {description}"

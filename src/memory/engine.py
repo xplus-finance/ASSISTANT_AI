@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import threading
+import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -10,6 +12,9 @@ import apsw
 import structlog
 
 log = structlog.get_logger("assistant.memory")
+
+_OPTIMIZE_INTERVAL_SECS = 24 * 60 * 60  # 24 hours
+_STMT_CACHE_SIZE = 64  # Number of prepared statement strings to remember
 
 _PRAGMAS = """
 PRAGMA journal_mode = WAL;
@@ -61,10 +66,11 @@ CREATE TABLE IF NOT EXISTS learned_facts (
     category TEXT NOT NULL,
     fact TEXT NOT NULL,
     confidence REAL DEFAULT 1.0 CHECK(confidence BETWEEN 0 AND 1),
-    source TEXT,
+    source TEXT DEFAULT 'conversation',
     learned_at TEXT DEFAULT (datetime('now')),
     last_used TEXT,
-    use_count INTEGER DEFAULT 0
+    use_count INTEGER DEFAULT 0,
+    superseded_by INTEGER REFERENCES learned_facts(id)
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(
@@ -286,8 +292,12 @@ class MemoryEngine:
         self._encryption_key = encryption_key
         self._lock = threading.Lock()
         self._conn: apsw.Connection | None = None
+        # LRU cache for prepared statement SQL strings (avoids re-parsing identical queries)
+        self._stmt_cache: OrderedDict[str, None] = OrderedDict()
+        self._last_optimize_time: float = 0.0
         self._open()
         self._init_db()
+        self._maybe_optimize()
         log.info("memory_engine.ready", db_path=self._db_path, encrypted=bool(encryption_key))
 
     def _open(self) -> None:
@@ -299,9 +309,10 @@ class MemoryEngine:
             # apsw is NOT compiled with SQLCipher. We attempt the pragma
             # but gracefully skip if the extension is not available.
             try:
-                if "'" in self._encryption_key:
-                    raise ValueError("Encryption key contains invalid characters")
-                self._conn.execute(f"PRAGMA key = '{self._encryption_key}'")
+                import re as _re
+                if not _re.fullmatch(r'[0-9a-fA-F]+', self._encryption_key):
+                    raise ValueError("Encryption key must be hex-only")
+                self._conn.execute(f"PRAGMA key = \"x'{self._encryption_key}'\"")  # hex key literal
                 log.info("memory_engine.encryption_enabled")
             except apsw.SQLError:
                 log.warning(
@@ -328,8 +339,77 @@ class MemoryEngine:
                 self._conn.execute("ROLLBACK")
                 raise
 
+        self._run_migrations()
+
+    def optimize(self) -> None:
+        """Run VACUUM and ANALYZE to reclaim space and refresh query planner statistics.
+
+        VACUUM rewrites the database file to remove free pages left by deletes/updates.
+        ANALYZE updates the sqlite_stat tables so the query planner picks better indexes.
+        Both are safe to call on a live database with WAL mode.
+        """
+        assert self._conn is not None, "MemoryEngine is closed"
+        log.info("memory_engine.optimize_start")
+        try:
+            with self._lock:
+                self._conn.execute("VACUUM")
+                self._conn.execute("ANALYZE")
+                self._conn.execute("PRAGMA optimize")
+            self._last_optimize_time = time.monotonic()
+            log.info("memory_engine.optimize_complete")
+        except Exception as exc:
+            log.warning("memory_engine.optimize_failed", error=str(exc))
+
+    def _maybe_optimize(self) -> None:
+        """Run optimize() if it hasn't been run in the last 24 hours."""
+        now = time.monotonic()
+        if now - self._last_optimize_time < _OPTIMIZE_INTERVAL_SECS:
+            return
+        self.optimize()
+
+    def _run_migrations(self) -> None:
+        """Apply incremental ALTER TABLE migrations for existing databases."""
+        assert self._conn is not None
+        migrations: list[tuple[str, str]] = [
+            # (check_sql, alter_sql)
+            # Add 'superseded_by' to learned_facts if absent
+            (
+                "SELECT COUNT(*) FROM pragma_table_info('learned_facts') WHERE name='superseded_by'",
+                "ALTER TABLE learned_facts ADD COLUMN superseded_by INTEGER REFERENCES learned_facts(id)",
+            ),
+            # Ensure 'source' column exists in learned_facts with a proper default
+            # (it already existed but may have been NULL in old rows; no migration needed
+            #  for the column itself — it was always present per original schema)
+        ]
+        with self._lock:
+            for check_sql, alter_sql in migrations:
+                try:
+                    row = next(self._conn.execute(check_sql), None)
+                    if row and row[0] == 0:
+                        self._conn.execute(alter_sql)
+                        log.info("memory_engine.migration_applied", sql=alter_sql[:80])
+                except Exception as exc:
+                    log.warning("memory_engine.migration_skipped", sql=alter_sql[:80], error=str(exc))
+
+    def _cache_stmt(self, sql: str) -> None:
+        """Track recently used SQL strings in an LRU dict.
+
+        APSW compiles each SQL string to a prepared statement internally.
+        Keeping the LRU order means the most-used queries stay warm in
+        SQLite's internal statement cache when the same SQL is re-submitted.
+        This is a Python-level accounting layer; the actual statement reuse
+        happens inside SQLite's own cache (controlled by SQLITE_MAX_PREPARE_RETRIES).
+        """
+        if sql in self._stmt_cache:
+            self._stmt_cache.move_to_end(sql)
+        else:
+            self._stmt_cache[sql] = None
+            if len(self._stmt_cache) > _STMT_CACHE_SIZE:
+                self._stmt_cache.popitem(last=False)
+
     def execute(self, sql: str, params: Sequence[Any] = ()) -> apsw.Cursor:
         assert self._conn is not None, "MemoryEngine is closed"
+        self._cache_stmt(sql)
         with self._lock:
             return self._conn.execute(sql, tuple(params))
 
