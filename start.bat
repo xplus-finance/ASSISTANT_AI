@@ -13,15 +13,14 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b 1
 )
 
-REM Auto-update from git (keeps code in sync with latest fixes)
+REM Check for updates (informational only — does not auto-update)
 where git >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
-    echo Buscando actualizaciones...
-    git pull --ff-only --quiet 2>nul
-    if %ERRORLEVEL% EQU 0 (
-        echo Codigo actualizado.
-    ) else (
-        echo Sin conexion o hay cambios locales. Continuando con version actual.
+    git fetch --quiet 2>nul
+    for /f %%i in ('git rev-list HEAD..@{u} --count 2^>nul') do (
+        if %%i GTR 0 (
+            echo [INFO] Hay %%i actualizaciones disponibles. Ejecuta: git pull
+        )
     )
 )
 

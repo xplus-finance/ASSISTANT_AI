@@ -297,72 +297,52 @@ Write-Step "pip actualizado."
 # ============================================================================
 Write-Header "6" "Instalando dependencias (1-3 minutos)"
 
-# Safe pip install: captures output, ignores warnings, only reports real failures
-function Install-Pkg($name, $pkg, $extra = "") {
-    Write-Work "  $name..."
-    try {
-        if ($extra) {
-            $out = & $PipVenv install $pkg $extra 2>&1 | Out-String
-        } else {
-            $out = & $PipVenv install $pkg 2>&1 | Out-String
-        }
-    } catch {
-        # PowerShell treats pip stderr as exception - ignore it
-    }
+# Install everything from pyproject.toml (single source of truth for dependencies)
+# Using -e ".[windows]" installs core deps + Windows-specific packages
+Write-Work "Instalando dependencias desde pyproject.toml..."
+$pipLog = Join-Path $env:TEMP "pip_install.log"
+try {
+    & $PipVenv install -e ".[windows]" --prefer-binary 2>&1 | Out-File $pipLog -Encoding utf8
+    $pipExit = $LASTEXITCODE
+} catch {
+    $pipExit = 1
 }
 
-# Database driver
-Install-Pkg "apsw" "apsw" "--prefer-binary --quiet"
-
-# Core deps - one package per call, no multi-package strings
-Install-Pkg "Telegram bot"      "python-telegram-bot[ext]" "--quiet"
-Install-Pkg "httpx"             "httpx"                    "--quiet"
-Install-Pkg "aiohttp"           "aiohttp"                  "--quiet"
-Install-Pkg "pydub"             "pydub"                    "--quiet"
-Install-Pkg "audioop-lts"       "audioop-lts"              "--quiet"
-Install-Pkg "Pydantic"          "pydantic"                 "--quiet"
-Install-Pkg "Pydantic Settings" "pydantic-settings"        "--quiet"
-Install-Pkg "Scheduler"         "APScheduler"              "--quiet"
-Install-Pkg "File watcher"      "watchdog"                 "--quiet"
-Install-Pkg "Web scraping"      "beautifulsoup4"           "--quiet"
-Install-Pkg "Logging"           "structlog"                "--quiet"
-Install-Pkg "Cryptography"      "cryptography"             "--quiet"
-Install-Pkg "bcrypt"            "bcrypt"                   "--quiet"
-Install-Pkg "Config"            "python-dotenv"            "--quiet"
-Install-Pkg "gTTS"              "gTTS"                     "--quiet"
-Install-Pkg "click (fix)"       "click==8.1.8"             "--quiet"
-Install-Pkg "OpenAI"            "openai"                   "--quiet"
-Install-Pkg "Pillow"            "Pillow"                   "--quiet"
-
-# Windows-specific
-Install-Pkg "pyautogui"         "pyautogui"                "--quiet"
-Install-Pkg "pyperclip"         "pyperclip"                "--quiet"
-Install-Pkg "pyttsx3"           "pyttsx3"                  "--quiet"
-
-# faster-whisper (may have dependency warnings - that is OK)
-Install-Pkg "faster-whisper"    "faster-whisper"           "--prefer-binary --quiet"
-
-# Install the project itself
-Write-Work "Instalando el asistente..."
-try { $out = & $PipVenv install -e . --quiet --no-deps 2>&1 | Out-String } catch {}
+if ($pipExit -ne 0) {
+    Write-Err "Error al instalar dependencias."
+    Write-Host ""
+    Write-Host "  Ultimas lineas del log:" -ForegroundColor DarkGray
+    Get-Content $pipLog -Tail 15 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+    Write-Host ""
+    Write-Host "  Log completo: $pipLog" -ForegroundColor White
+    Write-Host "  Intenta manualmente: .venv\Scripts\pip.exe install -e `".[windows]`"" -ForegroundColor Cyan
+    Write-Host ""
+    Read-Host "  Presiona Enter para salir"
+    exit 1
+}
+Remove-Item $pipLog -ErrorAction SilentlyContinue
 
 # Verify critical imports actually work
 Write-Work "Verificando dependencias..."
 $verifyCode = @"
 ok, fail = [], []
-for mod in ['telegram','httpx','aiohttp','pydub','pydantic','structlog','cryptography','bcrypt','dotenv','PIL','openai','apsw']:
+for mod in ['telegram','httpx','aiohttp','pydub','pydantic','pydantic_settings','structlog','cryptography','bcrypt','dotenv','PIL','openai','apsw','faster_whisper']:
     try:
         __import__(mod)
         ok.append(mod)
     except ImportError:
         fail.append(mod)
 print(f'OK: {len(ok)}/{len(ok)+len(fail)}')
-if fail: print(f'Faltan: {", ".join(fail)}')
+if fail: print(f'FALTAN: {", ".join(fail)}')
 else: print('Todas las dependencias verificadas')
 "@
 try {
     $verifyOut = & $PythonVenv -c $verifyCode 2>&1 | Out-String
-    Write-Host "  $($verifyOut.Trim())" -ForegroundColor DarkGray
+    $verifyTrimmed = $verifyOut.Trim()
+    Write-Host "  $verifyTrimmed" -ForegroundColor DarkGray
+    if ($verifyTrimmed -match "FALTAN") {
+        Write-Warn "Algunas dependencias no se instalaron. Revisa el output."
+    }
 } catch {}
 
 Write-Step "Dependencias instaladas."

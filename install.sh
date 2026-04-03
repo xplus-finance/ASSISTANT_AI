@@ -75,7 +75,7 @@ echo ""
 echo -e "${CYAN}"
 echo "  ╔══════════════════════════════════════════════════════════════╗"
 echo "  ║                                                              ║"
-echo "  ║        🤖 Personal AI Assistant — Instalador v2.0            ║"
+echo "  ║        🤖 Personal AI Assistant — Instalador v3.0            ║"
 echo "  ║                                                              ║"
 echo "  ║   Tu propio asistente de IA personal, accesible desde        ║"
 echo "  ║   Telegram o WhatsApp, 24/7, desde cualquier parte.          ║"
@@ -97,7 +97,7 @@ ask "Presiona ${BOLD}Enter${NC} para comenzar... "
 read -r
 
 # ============================================================================
-# PASO 1/10 — Verificación del sistema
+# PASO 1/11 — Verificación del sistema
 # ============================================================================
 step_header "1" "Verificando tu sistema"
 echo -e "  ${DIM}Revisando que tu computadora tenga todo lo necesario.${NC}"
@@ -109,7 +109,6 @@ echo ""
 
 # --- Python 3.12+ ---
 working "Buscando Python 3.12 o superior..."
-sleep 0.5
 
 PYTHON_CMD=""
 for cmd in python3.12 python3.13 python3.14 python3; do
@@ -156,7 +155,6 @@ info "Python encontrado: ${BOLD}$PYTHON_CMD ($($PYTHON_CMD --version))${NC}"
 
 # --- ffmpeg ---
 working "Buscando ffmpeg (procesamiento de audio)..."
-sleep 0.3
 
 if command -v ffmpeg &>/dev/null; then
     info "ffmpeg instalado: ${DIM}$(ffmpeg -version 2>&1 | head -1 | cut -d' ' -f1-3)${NC}"
@@ -195,7 +193,6 @@ fi
 
 # --- bubblewrap ---
 working "Buscando bubblewrap (seguridad/sandbox)..."
-sleep 0.3
 
 if command -v bwrap &>/dev/null; then
     info "bubblewrap instalado (sandbox de seguridad activo)"
@@ -208,20 +205,33 @@ else
     echo -e "  entorno aislado (sandbox). Protege tu sistema si el asistente"
     echo -e "  ejecuta algo potencialmente peligroso."
     echo ""
-    if confirm "¿Quieres que lo instale? (recomendado)"; then
+    if [[ "$(uname)" == "Darwin" ]]; then
+        echo -e "  ${DIM}bubblewrap no está disponible en macOS.${NC}"
+        echo -e "  ${DIM}Los comandos se ejecutarán con aislamiento básico (subprocess).${NC}"
+    elif confirm "¿Quieres que lo instale? (recomendado)"; then
         working "Instalando bubblewrap..."
-        sudo apt update -qq > /dev/null 2>&1 && sudo apt install -y -qq bubblewrap > /dev/null 2>&1
-        info "bubblewrap instalado correctamente."
+        if command -v apt &>/dev/null; then
+            sudo apt update -qq > /dev/null 2>&1 && sudo apt install -y -qq bubblewrap > /dev/null 2>&1
+        elif command -v dnf &>/dev/null; then
+            sudo dnf install -y -q bubblewrap > /dev/null 2>&1
+        elif command -v pacman &>/dev/null; then
+            sudo pacman -S --noconfirm --needed bubblewrap > /dev/null 2>&1
+        fi
+        if command -v bwrap &>/dev/null; then
+            info "bubblewrap instalado correctamente."
+        else
+            warn "No se pudo instalar bubblewrap automáticamente."
+        fi
     else
         warn "Sin bubblewrap los comandos se ejecutarán SIN aislamiento."
-        echo -e "  ${DIM}Puedes instalarlo después: sudo apt install bubblewrap${NC}"
+        echo -e "  ${DIM}Puedes instalarlo después con tu gestor de paquetes.${NC}"
     fi
 fi
 
 step_done "1" "Sistema verificado"
 
 # ============================================================================
-# PASO 2/10 — Claude Code CLI
+# PASO 2/11 — Claude Code CLI
 # ============================================================================
 step_header "2" "Claude Code (el cerebro de tu asistente)"
 
@@ -231,7 +241,6 @@ echo -e "  ${DIM}Necesitas una suscripción de Claude Pro o Max.${NC}"
 echo ""
 
 working "Buscando Claude Code CLI..."
-sleep 0.5
 
 if command -v claude &>/dev/null; then
     CLAUDE_VER=$(claude --version 2>/dev/null | head -1 || echo "desconocida")
@@ -294,7 +303,7 @@ fi
 step_done "2" "Claude Code verificado"
 
 # ============================================================================
-# PASO 3/10 — Elegir canal de mensajería
+# PASO 3/11 — Elegir canal de mensajería
 # ============================================================================
 step_header "3" "Elige tu canal de mensajería"
 
@@ -335,7 +344,7 @@ done
 step_done "3" "Canal seleccionado"
 
 # ============================================================================
-# PASO 4/10 — Configuración del canal
+# PASO 4/11 — Configuración del canal
 # ============================================================================
 step_header "4" "Configuración del canal de mensajería"
 
@@ -625,7 +634,7 @@ fi # end SKIP_ENV for channel config
 step_done "4" "Canal configurado"
 
 # ============================================================================
-# PASO 5/10 — Entorno virtual de Python
+# PASO 5/11 — Entorno virtual de Python
 # ============================================================================
 step_header "5" "Preparando entorno de Python"
 
@@ -650,7 +659,7 @@ info "pip actualizado."
 step_done "5" "Entorno preparado"
 
 # ============================================================================
-# PASO 6/10 — Dependencias de Python
+# PASO 6/11 — Dependencias de Python
 # ============================================================================
 step_header "6" "Instalando dependencias"
 
@@ -660,22 +669,39 @@ echo ""
 
 working "Instalando paquetes..."
 
-# Instalar con output en vivo pero filtrado
-pip install -e ".[dev]" 2>&1 | while IFS= read -r line; do
-    if echo "$line" | grep -qE "^(Collecting|Downloading|Installing|Building)"; then
-        pkg_name=$(echo "$line" | sed 's/^[^ ]* //' | cut -d' ' -f1 | cut -d'>' -f1 | cut -d'=' -f1 | cut -d'<' -f1 | head -c 40)
-        clear_line
-        printf "  ${CYAN}📦${NC} %s..." "$pkg_name"
-    fi
-done
-clear_line
+# Install with live output, capturing exit code via pipefail
+set +e
+PIP_LOG=$(mktemp)
+pip install -e ".[dev]" > "$PIP_LOG" 2>&1
+PIP_EXIT=$?
+
+if [[ $PIP_EXIT -ne 0 ]]; then
+    echo ""
+    error "Error al instalar dependencias (exit code: $PIP_EXIT)."
+    echo ""
+    echo -e "  ${DIM}Últimas líneas del log:${NC}"
+    tail -15 "$PIP_LOG" | while IFS= read -r line; do
+        echo -e "  ${DIM}  $line${NC}"
+    done
+    echo ""
+    echo -e "  ${BOLD}Log completo guardado en:${NC} $PIP_LOG"
+    echo ""
+    echo -e "  ${BOLD}Posibles soluciones:${NC}"
+    echo -e "  1. Verifica tu conexión a internet"
+    echo -e "  2. Intenta: ${CYAN}source .venv/bin/activate && pip install -e '.[dev]'${NC}"
+    echo -e "  3. Si persiste, abre un issue en el repositorio con el log"
+    echo ""
+    exit 1
+fi
+rm -f "$PIP_LOG"
+set -e
 
 info "Todas las dependencias instaladas correctamente."
 
 step_done "6" "Dependencias instaladas"
 
 # ============================================================================
-# PASO 7/10 — Modelo de audio (Whisper)
+# PASO 7/11 — Modelo de audio (Whisper)
 # ============================================================================
 step_header "7" "Configuración de audio"
 
@@ -731,7 +757,7 @@ if confirm "¿Descargar el modelo ahora? (puede tardar según tu internet)"; the
     echo -e "  ${DIM}Esto puede tardar varios minutos dependiendo de tu conexión...${NC}"
     echo ""
     source "$PROJECT_DIR/.venv/bin/activate"
-    if $PYTHON_CMD -c "from faster_whisper import WhisperModel; WhisperModel('$WHISPER_MODEL')" 2>&1 | tail -5; then
+    if "$PROJECT_DIR/.venv/bin/python" -c "from faster_whisper import WhisperModel; WhisperModel('$WHISPER_MODEL')" 2>&1 | tail -5; then
         info "Modelo descargado y listo. 🎉"
     else
         warn "No se pudo descargar ahora. Se descargará automáticamente al primer uso."
@@ -775,20 +801,22 @@ if [[ "$PET_CHOICE" != "6" ]]; then
         *) PET_TYPE="dog"; warn "Opción no reconocida, usando perro." ;;
     esac
 
-    # Instalar dependencia de sistema para Qt xcb plugin
-    working "Instalando dependencias del sistema para la mascota..."
-    if command -v apt &>/dev/null; then
-        sudo apt install -y -qq libxcb-cursor0 > /dev/null 2>&1
-    elif command -v dnf &>/dev/null; then
-        sudo dnf install -y -q xcb-util-cursor > /dev/null 2>&1
-    elif command -v pacman &>/dev/null; then
-        sudo pacman -S --noconfirm --needed xcb-util-cursor > /dev/null 2>&1
+    # Instalar dependencia de sistema para Qt xcb plugin (Linux only, macOS no lo necesita)
+    if [[ "$(uname)" != "Darwin" ]]; then
+        working "Instalando dependencias del sistema para la mascota..."
+        if command -v apt &>/dev/null; then
+            sudo apt install -y -qq libxcb-cursor0 > /dev/null 2>&1
+        elif command -v dnf &>/dev/null; then
+            sudo dnf install -y -q xcb-util-cursor > /dev/null 2>&1
+        elif command -v pacman &>/dev/null; then
+            sudo pacman -S --noconfirm --needed xcb-util-cursor > /dev/null 2>&1
+        fi
     fi
 
     working "Instalando PyQt6 (interfaz gráfica para la mascota)..."
     source "$PROJECT_DIR/.venv/bin/activate"
     pip install PyQt6 --quiet 2>&1 | tail -2
-    if $PYTHON_CMD -c "from PyQt6.QtWidgets import QApplication" 2>/dev/null; then
+    if "$PROJECT_DIR/.venv/bin/python" -c "from PyQt6.QtWidgets import QApplication" 2>/dev/null; then
         info "PyQt6 y dependencias instalados correctamente."
     else
         warn "PyQt6 no se pudo instalar. La mascota no estará disponible."
@@ -1040,7 +1068,6 @@ step_done "11" "Configuración final lista"
 # ============================================================================
 # PANTALLA FINAL DE ÉXITO
 # ============================================================================
-sleep 0.5
 echo ""
 echo -e "${GREEN}"
 echo "  ╔══════════════════════════════════════════════════════════════╗"

@@ -1,6 +1,6 @@
 [Unit]
 Description=Personal AI Assistant
-Documentation=https://github.com/your-org/personal-ai-assistant
+Documentation=https://github.com/mundowise/personal-ai-assistant
 After=network.target
 Wants=network-online.target
 
@@ -20,7 +20,7 @@ TimeoutStopSec=30
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=%PROJECT_DIR%/data /opt/ai-assistant/logs /opt/ai-assistant/models /opt/ai-assistant/src /opt/ai-assistant/skills /opt/ai-assistant/mcps /opt/ai-assistant/.backups /tmp
+ReadWritePaths=%PROJECT_DIR%/data %PROJECT_DIR%/logs %PROJECT_DIR%/models %PROJECT_DIR%/src %PROJECT_DIR%/skills %PROJECT_DIR%/mcps %PROJECT_DIR%/.backups /tmp
 PrivateTmp=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes

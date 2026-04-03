@@ -25,7 +25,7 @@ dependencies = [
     # install.ps1 handles --prefer-binary automatically; direct pip install may fail
     "apsw",
     # audioop-lts: backport of audioop removed in Python 3.13 (required by pydub)
-    "audioop-lts",
+    "audioop-lts; python_version>='3.13'",
     "pydantic>=2.0",
     "pydantic-settings",
     "APScheduler>=3.10",
