@@ -349,6 +349,13 @@ step_done "3" "Canal seleccionado"
 step_header "4" "Configuración del canal de mensajería"
 
 # --- Preparar .env ---
+ENV_TEMPLATE="$PROJECT_DIR/.env.example"
+if [[ ! -f "$ENV_TEMPLATE" ]]; then
+    error "Archivo .env.example no encontrado en $PROJECT_DIR"
+    echo -e "  ${DIM}El repositorio puede estar incompleto. Intenta: git checkout -- .env.example${NC}"
+    exit 1
+fi
+
 if [[ -f "$ENV_FILE" ]]; then
     warn "Ya existe un archivo de configuración (.env)."
     echo ""
@@ -356,13 +363,13 @@ if [[ -f "$ENV_FILE" ]]; then
         BACKUP_NAME="$ENV_FILE.backup.$(date +%Y%m%d_%H%M%S)"
         cp "$ENV_FILE" "$BACKUP_NAME"
         info "Backup guardado: ${DIM}$(basename "$BACKUP_NAME")${NC}"
-        cp "$PROJECT_DIR/.env.example" "$ENV_FILE"
+        cp "$ENV_TEMPLATE" "$ENV_FILE"
     else
         info "Manteniendo configuración existente."
         SKIP_ENV=true
     fi
 else
-    cp "$PROJECT_DIR/.env.example" "$ENV_FILE"
+    cp "$ENV_TEMPLATE" "$ENV_FILE"
 fi
 
 BOT_USERNAME=""
@@ -642,10 +649,14 @@ echo -e "  ${DIM}Creando un espacio aislado para tu asistente.${NC}"
 echo -e "  ${DIM}Esto evita conflictos con otros programas de tu sistema.${NC}"
 echo ""
 
-if [[ -d "$PROJECT_DIR/.venv" ]]; then
+if [[ -d "$PROJECT_DIR/.venv" ]] && [[ -f "$PROJECT_DIR/.venv/bin/python" ]]; then
     info "Entorno virtual ya existe — reutilizando."
     source "$PROJECT_DIR/.venv/bin/activate"
 else
+    if [[ -d "$PROJECT_DIR/.venv" ]]; then
+        warn "Entorno virtual corrupto (falta bin/python). Recreando..."
+        rm -rf "$PROJECT_DIR/.venv"
+    fi
     working "Creando entorno virtual con $PYTHON_CMD..."
     $PYTHON_CMD -m venv "$PROJECT_DIR/.venv"
     source "$PROJECT_DIR/.venv/bin/activate"

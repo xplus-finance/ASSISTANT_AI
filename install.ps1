@@ -276,9 +276,13 @@ if (-not $skipEnv) {
 # ============================================================================
 Write-Header "5" "Preparando entorno de Python"
 
-if (Test-Path $VenvPath) {
+if ((Test-Path $VenvPath) -and (Test-Path $PythonVenv)) {
     Write-Step "Entorno virtual ya existe."
 } else {
+    if (Test-Path $VenvPath) {
+        Write-Warn "Entorno virtual corrupto (falta python.exe). Recreando..."
+        Remove-Item $VenvPath -Recurse -Force
+    }
     Write-Work "Creando entorno virtual..."
     & $pythonCmd -m venv $VenvPath
     if (-not (Test-Path $PythonVenv)) {

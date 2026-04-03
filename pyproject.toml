@@ -62,7 +62,7 @@ dev = [
 ]
 
 [project.scripts]
-start = "src.main:main"
+start = "src.main:run"
 
 [tool.setuptools.packages.find]
 where = ["."]
